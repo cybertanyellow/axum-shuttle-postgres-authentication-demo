@@ -1,6 +1,7 @@
 mod authentication;
 mod errors;
 mod utils;
+mod dcare_user;
 
 use std::sync::{Arc, Mutex};
 
@@ -23,8 +24,11 @@ use shuttle_service::{error::CustomError, ShuttleAxum};
 use sqlx::Executor;
 use tera::{Context, Tera};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use utils::*;
+use dcare_user::{
+    post_signup_api, post_login_api, logout_response_api,
+    post_delete_api, me_api, user_api, users_api,
+};
 
 type Templates = Arc<Tera>;
 type Database = sqlx::PgPool;
@@ -67,6 +71,13 @@ pub fn get_router(database: Database) -> Router {
         .route("/user/:username", get(user))
         .route("/users", get(users))
         .route("/styles.css", any(styles))
+        .route("/api/v1/signup", post(post_signup_api))
+        .route("/api/v1/login", post(post_login_api))
+        .route("/api/v1/logout", post(logout_response_api))
+        .route("/api/v1/delete", post(post_delete_api))
+        .route("/api/v1/me", get(me_api))
+        .route("/api/v1/user/:username", get(user_api))
+        .route("/api/v1/users", get(users_api))
         .layer(middleware::from_fn(move |req, next| {
             auth(req, next, middleware_database.clone())
         }))
