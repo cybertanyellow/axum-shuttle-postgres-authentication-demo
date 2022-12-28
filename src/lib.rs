@@ -5,11 +5,12 @@ mod utils;
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    extract::{Extension, Multipart, Path},
+    extract::{Extension, Path},
+    //extract::Multipart,
     middleware,
     response::{Html, IntoResponse, Redirect},
     routing::{any, get, post},
-    Router,
+    Router, Json,
 };
 use http::Response;
 
@@ -21,6 +22,8 @@ use rand_core::{RngCore, SeedableRng};
 use shuttle_service::{error::CustomError, ShuttleAxum};
 use sqlx::Executor;
 use tera::{Context, Tera};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use utils::*;
 
 type Templates = Arc<Tera>;
@@ -119,12 +122,20 @@ async fn get_login(Extension(templates): Extension<Templates>) -> impl IntoRespo
     Html(templates.render("login", &Context::new()).unwrap())
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct CreateUser {
+    username: String,
+    password: String,
+    confirm_password: String,
+}
+
 async fn post_signup(
     Extension(database): Extension<Database>,
     Extension(random): Extension<Random>,
-    multipart: Multipart,
+    //multipart: Multipart,
+    Json(user): Json<CreateUser>,
 ) -> impl IntoResponse {
-    let data = parse_multipart(multipart)
+    /*let data = parse_multipart(multipart)
         .await
         .map_err(|err| error_page(&err))?;
 
@@ -143,15 +154,29 @@ async fn post_signup(
         }
     } else {
         Err(error_page(&SignupError::MissingDetails))
+    }*/
+    if user.password != user.confirm_password {
+        return Err(error_page(&SignupError::PasswordsDoNotMatch));
     }
+
+    match signup(&database, random, &user.username, &user.password).await {
+        Ok(session_token) => Ok(login_response(session_token)),
+        Err(error) => Err(error_page(&error)),
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct User {
+    username: String,
+    password: String,
 }
 
 async fn post_login(
     Extension(database): Extension<Database>,
     Extension(random): Extension<Random>,
-    multipart: Multipart,
+    Json(user): Json<User>,
 ) -> impl IntoResponse {
-    let data = parse_multipart(multipart)
+    /*let data = parse_multipart(multipart)
         .await
         .map_err(|err| error_page(&err))?;
 
@@ -162,6 +187,10 @@ async fn post_login(
         }
     } else {
         Err(error_page(&LoginError::MissingDetails))
+    }*/
+    match login(&database, random, &user.username, &user.password).await {
+        Ok(session_token) => Ok(login_response(session_token)),
+        Err(err) => Err(error_page(&err)),
     }
 }
 

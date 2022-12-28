@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use axum::extract::Multipart;
+//use axum::extract::Multipart;
 use http::Response;
 use http_body::Empty;
 
@@ -42,7 +42,7 @@ pub(crate) fn error_page(err: &dyn std::error::Error) -> impl axum::response::In
         .unwrap()
 }
 
-pub(crate) async fn parse_multipart(
+/*pub(crate) async fn parse_multipart(
     mut multipart: Multipart,
 ) -> Result<HashMap<String, String>, MultipartError> {
     let mut map = HashMap::new();
@@ -61,4 +61,4 @@ pub(crate) async fn parse_multipart(
         map.insert(name, data);
     }
     Ok(map)
-}
+}*/
