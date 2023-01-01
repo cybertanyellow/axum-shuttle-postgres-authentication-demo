@@ -16,7 +16,7 @@ once_cell = "1.16.0"
 pbkdf2 = "0.11.0"
 rand_chacha = "0.3.1"
 rand_core = { version = "0.6.4", features = ["std"] }
-sqlx = { version = "0.6.2", features = ["runtime-tokio-native-tls", "postgres"] }
+sqlx = { version = "0.6.2", features = ["runtime-tokio-native-tls", "postgres", "chrono", "bit-vec"] }
 tera = { version = "1.17.1", default-features = false }
 shuttle-shared-db = { version = "0.8.0", features = ["postgres"] }
 cookie = "0.16.2"
