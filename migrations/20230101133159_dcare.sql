@@ -51,13 +51,13 @@ CREATE TABLE IF NOT EXISTS faults (
 );
 
 -- 工單狀態分類
-CREATE TABLE IF NOT EXISTS schedules (
+CREATE TABLE IF NOT EXISTS status (
     id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     flow text NOT NULL         -- 收件 -> 報價 -> 更新 -> 鎖定 -> 退件/完成 
 );
 
-INSERT INTO schedules(flow) values ('收件');
-INSERT INTO schedules(flow) values ('報價');
+INSERT INTO status(flow) values ('收件');
+INSERT INTO status(flow) values ('報價');
 
 -- 工單
 CREATE TABLE IF NOT EXISTS orders (
@@ -85,9 +85,19 @@ CREATE TABLE IF NOT EXISTS orders (
     cost integer,                 -- 報價
     prepaid_free integer,         -- 預收款
 
-    schedule_id integer REFERENCES schedules (id) ON DELETE CASCADE,    -- 工單狀態
+    status_id integer REFERENCES status (id) ON DELETE CASCADE,    -- 工單狀態
     servicer_id integer REFERENCES users (id) ON DELETE CASCADE,        -- 客服專員
     maintainer_id integer REFERENCES users (id) ON DELETE CASCADE       -- 維保人員
+);
+
+CREATE TABLE IF NOT EXISTS order_histories (
+    id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    order_id integer REFERENCES orders (id) ON DELETE CASCADE,     -- 工單
+    change_time timestamptz NOT NULL,    -- 開單時間
+    issuer_id integer REFERENCES users (id) ON DELETE CASCADE,     -- 人員
+    status_id integer REFERENCES status (id) ON DELETE CASCADE,    -- 工單狀態
+    remark text,                  -- 備註
+    cost integer
 );
 
 -- 型號品牌
