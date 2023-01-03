@@ -10,10 +10,68 @@ use http::Response;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use bit_vec::BitVec;
+use anyhow::{Result, anyhow};
 
-use crate::authentication::{auth, delete_user, login, signup, AuthState};
+use crate::authentication::{auth, delete_user, login, signup2, AuthState};
 use crate::errors::{LoginError, NoUser, NotLoggedIn, SignupError};
 use crate::{Database, Random, COOKIE_MAX_AGE, USER_COOKIE_NAME};
+
+async fn title_id_or_insert(
+    database: &Database,
+    name: &str,
+) -> Result<i32> {
+    const QUERY: &str = "SELECT id FROM titles WHERE name = $1;";
+    let title: Option<(i32,)> = sqlx::query_as(QUERY)
+        .bind(&name)
+        .fetch_optional(database)
+        .await
+        .unwrap();
+
+    if let Some((id,)) = title {
+        Ok(id)
+    } else {
+        const INSERT_QUERY: &str =
+            "INSERT INTO titles (name) VALUES ($1) RETURNING id;";
+        let fetch_one = sqlx::query_as(INSERT_QUERY)
+            .bind(name)
+            .fetch_one(database)
+            .await;
+
+        match fetch_one {
+            Ok((title_id,)) => Ok(title_id),
+            Err(err) => Err(anyhow!("insert title fail - {err}")),
+        }
+    }
+}
+
+async fn department_id_or_insert(
+    database: &Database,
+    name: &str,
+) -> Result<i32> {
+    const QUERY: &str = "SELECT id FROM departments WHERE name = $1;";
+    let title: Option<(i32,)> = sqlx::query_as(QUERY)
+        .bind(&name)
+        .fetch_optional(database)
+        .await
+        .unwrap();
+
+    if let Some((id,)) = title {
+        Ok(id)
+    } else {
+        const INSERT_QUERY: &str =
+            "INSERT INTO departments (name) VALUES ($1) RETURNING id;";
+        let fetch_one = sqlx::query_as(INSERT_QUERY)
+            .bind(name)
+            .fetch_one(database)
+            .await;
+
+        match fetch_one {
+            Ok((department_id,)) => Ok(department_id),
+            Err(err) => Err(anyhow!("insert department fail - {err}")),
+        }
+    }
+}
 
 pub(crate) async fn user_api(
     Path(username): Path<String>,
@@ -51,13 +109,16 @@ pub(crate) async fn user_api(
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateUser {
-    username: String,
+    account: String,
     password: String,
     confirm_password: String,
-
-    email: String,
+    permission: BitVec,
+    username: String,
+    worer_id: String,
+    title: Option<String>,
+    department: Option<String>,
     phone: String,
-    role_id: u64,
+    email: String,
 }
 
 pub(crate) async fn post_signup_api(
@@ -73,7 +134,42 @@ pub(crate) async fn post_signup_api(
         return (StatusCode::OK, Json(resp)).into_response();
     }
 
-    match signup(&database, random, &user.username, &user.password).await {
+    let title_id = match user.title {
+        Some(title) => {
+            match title_id_or_insert(&database, &title).await {
+                Ok(id) => id,
+                Err(e) => {
+                    let resp = json!({
+                        "code": 400,
+                        "error": "title non-exist",
+                    });
+                    return (StatusCode::OK, Json(resp)).into_response();
+                }
+            }
+        },
+        None => 0,
+    };
+
+
+    let department_id = match user.department {
+        Some(department) => {
+            match department_id_or_insert(&database, &department).await {
+                Ok(id) => id,
+                Err(e) => {
+                    let resp = json!({
+                        "code": 400,
+                        "error": "department non-exist",
+                    });
+                    return (StatusCode::OK, Json(resp)).into_response();
+                }
+            }
+        },
+        None => 0,
+    };
+
+    match signup2(&database, random, &user.account, &user.password,
+                 &user.permission, &user.username, &user.worer_id,
+                 title_id, department_id, &user.phone, &user.email).await {
         Ok(session_token) => {
             let resp = json!({
                 "code": 200,

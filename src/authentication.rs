@@ -5,6 +5,7 @@ use pbkdf2::{
     Pbkdf2,
 };
 use rand_core::{OsRng, RngCore};
+use bit_vec::BitVec;
 
 use crate::{
     errors::{LoginError, SignupError},
@@ -118,22 +119,22 @@ pub(crate) async fn auth<B>(
 pub(crate) async fn signup(
     database: &Database,
     random: Random,
-    username: &str,
+    account: &str,
     password: &str,
 ) -> Result<SessionToken, SignupError> {
-    fn valid_username(username: &str) -> bool {
-        (1..20).contains(&username.len())
-            && username
+    fn valid_username(account: &str) -> bool {
+        (1..20).contains(&account.len())
+            && account
                 .chars()
                 .all(|c| matches!(c, 'a'..='z' | '0'..='9' | '-'))
     }
 
-    if !valid_username(username) {
+    if !valid_username(account) {
         return Err(SignupError::InvalidUsername);
     }
 
     const INSERT_QUERY: &str =
-        "INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id;";
+        "INSERT INTO users (account, password) VALUES ($1, $2) RETURNING id;";
 
     let salt = SaltString::generate(&mut OsRng);
 
@@ -147,8 +148,74 @@ pub(crate) async fn signup(
     };
 
     let fetch_one = sqlx::query_as(INSERT_QUERY)
-        .bind(username)
+        .bind(account)
         .bind(hashed_password)
+        .fetch_one(database)
+        .await;
+
+    let user_id: i32 = match fetch_one {
+        Ok((user_id,)) => user_id,
+        Err(sqlx::Error::Database(database))
+            if database.constraint() == Some("users_username_key") =>
+        {
+            return Err(SignupError::UsernameExists);
+        }
+        Err(_err) => {
+            return Err(SignupError::InternalError);
+        }
+    };
+
+    Ok(new_session(database, random, user_id).await)
+}
+
+pub(crate) async fn signup2(
+    database: &Database,
+    random: Random,
+    account: &str,
+    password: &str,
+    permission: &BitVec,
+    username: &str,
+    worker_id: &str,
+    title_id: i32,
+    department_id: i32,
+    phone: &str,
+    email: &str,
+) -> Result<SessionToken, SignupError> {
+    fn valid_username(account: &str) -> bool {
+        (1..20).contains(&account.len())
+            && account
+                .chars()
+                .all(|c| matches!(c, 'a'..='z' | '0'..='9' | '-'))
+    }
+
+    if !valid_username(account) {
+        return Err(SignupError::InvalidUsername);
+    }
+
+    const INSERT_QUERY: &str =
+        "INSERT INTO users (account, password, permission, username, worker_id, title_id, department_id, phone, email, create_time) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP) RETURNING id;";
+
+    let salt = SaltString::generate(&mut OsRng);
+
+    // Hash password to PHC string ($pbkdf2-sha256$...)
+    let password_hash = Pbkdf2.hash_password(password.as_bytes(), &salt);
+
+    let hashed_password = if let Ok(password) = password_hash {
+        password.to_string()
+    } else {
+        return Err(SignupError::InvalidPassword);
+    };
+
+    let fetch_one = sqlx::query_as(INSERT_QUERY)
+        .bind(account)
+        .bind(hashed_password)
+        .bind(permission)
+        .bind(username)
+        .bind(worker_id)
+        .bind(title_id)
+        .bind(department_id)
+        .bind(phone)
+        .bind(email)
         .fetch_one(database)
         .await;
 

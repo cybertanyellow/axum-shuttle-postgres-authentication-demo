@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS titles (
 CREATE TABLE IF NOT EXISTS departments (
     id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     name text NOT NULL UNIQUE,          -- 部門單位名稱
-    address text NOT NULL UNIQUE        -- 部門地址
+    address text        -- 部門地址
 );
 
 -- 工作人員, admin也算進來
@@ -56,8 +56,8 @@ CREATE TABLE IF NOT EXISTS status (
     flow text NOT NULL         -- 收件 -> 報價 -> 更新 -> 鎖定 -> 退件/完成 
 );
 
-INSERT INTO status(flow) values ('收件');
-INSERT INTO status(flow) values ('報價');
+--INSERT INTO status(flow) values ('收件');
+--INSERT INTO status(flow) values ('報價');
 
 -- 工單
 CREATE TABLE IF NOT EXISTS orders (
