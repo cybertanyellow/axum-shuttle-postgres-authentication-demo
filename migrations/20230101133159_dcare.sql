@@ -1,3 +1,14 @@
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS order_histories;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS titles;
+DROP TABLE IF EXISTS departments;
+DROP TABLE IF EXISTS models;
+DROP TABLE IF EXISTS accessories;
+DROP TABLE IF EXISTS faults;
+DROP TABLE IF EXISTS status;
+
 -- 職稱
 CREATE TABLE IF NOT EXISTS titles (
     id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
@@ -100,7 +111,6 @@ CREATE TABLE IF NOT EXISTS order_histories (
     cost integer
 );
 
--- 型號品牌
 -- internal table for user login
 CREATE TABLE IF NOT EXISTS sessions (
     session_token BYTEA PRIMARY KEY,

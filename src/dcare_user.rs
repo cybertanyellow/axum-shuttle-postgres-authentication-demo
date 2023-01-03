@@ -8,10 +8,11 @@ use axum::{
 };
 use http::Response;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, serde_if_integer128};
 use serde_json::json;
 use bit_vec::BitVec;
 use anyhow::{Result, anyhow};
+use chrono::{DateTime, Local};
 
 use crate::authentication::{auth, delete_user, login, signup2, AuthState};
 use crate::errors::{LoginError, NoUser, NotLoggedIn, SignupError};
@@ -73,30 +74,36 @@ async fn department_id_or_insert(
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct DbUser {
+    account: String,
+    permission: BitVec,
+    username: String,
+    worker_id: String,
+    title: String,
+    department: String,
+    phone: String,
+    email: String,
+    create_time: DateTime<Local>,
+    login_time: DateTime<Local>,
+}
+
 pub(crate) async fn user_api(
-    Path(username): Path<String>,
-    Extension(mut auth_state): Extension<AuthState>,
+    Path(account): Path<String>,
+    Extension(_auth_state): Extension<AuthState>,
     Extension(database): Extension<Database>,
 ) -> impl IntoResponse {
-    const QUERY: &str = "SELECT username FROM users WHERE username = $1;";
+    /* TODO, limit with auth_state's pemission */
+    const QUERY: &str = "SELECT users.account, users.permission, users.username, users.worker_id, titles.name, departments.name, users.phone, users.email, users.create_time, users.login_time FROM users WHERE account = $1 INNER JOIN titles ON titles.id = users.title_id INNER JOIN departments ON departments.id = users.department_id;";
 
-    let user: Option<(String,)> = sqlx::query_as(QUERY)
-        .bind(&username)
+    if let Ok(Some(user)) = sqlx::query_as::<_, DbUser>(QUERY)
+        .bind(&account)
         .fetch_optional(&database)
-        .await
-        .unwrap();
-
-    if let Some((username,)) = user {
-        let user_is_self = auth_state
-            .get_user()
-            .await
-            .map(|logged_in_user| logged_in_user.username == username)
-            .unwrap_or_default();
+        .await {
 
         let resp = json!({
             "code": 200,
-            "username": &username,
-            "is_self": &user_is_self
+            "user": &user
         });
         (StatusCode::OK, Json(resp)).into_response()
     } else {
@@ -114,7 +121,7 @@ pub struct CreateUser {
     confirm_password: String,
     permission: BitVec,
     username: String,
-    worer_id: String,
+    worker_id: String,
     title: Option<String>,
     department: Option<String>,
     phone: String,
@@ -168,7 +175,7 @@ pub(crate) async fn post_signup_api(
     };
 
     match signup2(&database, random, &user.account, &user.password,
-                 &user.permission, &user.username, &user.worer_id,
+                 &user.permission, &user.username, &user.worker_id,
                  title_id, department_id, &user.phone, &user.email).await {
         Ok(session_token) => {
             let resp = json!({
@@ -260,18 +267,24 @@ pub(crate) async fn me_api(
 pub(crate) async fn users_api(
     Extension(database): Extension<Database>,
 ) -> impl IntoResponse {
-    const QUERY: &str = "SELECT username FROM users LIMIT 100;";
+    //const QUERY: &str = "SELECT username FROM users LIMIT 100;";
+    const QUERY: &str = "SELECT users.account, users.permission, users.username, users.worker_id, titles.name, departments.name, users.phone, users.email, users.create_time, users.login_time FROM users INNER JOIN titles ON titles.id = users.title_id INNER JOIN departments ON departments.id = users.department_id LIMIT 100;";
 
-    let users: Vec<(String,)> = sqlx::query_as(QUERY).fetch_all(&database).await.unwrap();
+    if let Ok(users) = sqlx::query_as::<_, DbUser>(QUERY)
+        .fetch_all(&database)
+        .await {
 
-    // This should be a no op right :)
-    let users = users.into_iter().map(|(value,)| value).collect::<Vec<_>>();
-
-    let resp = json!({
-        "code": 200,
-        "users": &users,
-    });
-    (StatusCode::OK, Json(resp)).into_response()
+        let resp = json!({
+            "code": 200,
+            "users": &users
+        });
+        (StatusCode::OK, Json(resp)).into_response()
+    } else {
+        let resp = json!({
+            "code": 401,
+        });
+        (StatusCode::OK, Json(resp)).into_response()
+    }
 }
 
 pub(crate) async fn logout_response_api(
@@ -284,3 +297,21 @@ pub(crate) async fn logout_response_api(
     (StatusCode::OK, Json(resp)).into_response()
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct TestUser {
+    permission: BitVec,
+}
+
+#[test]
+fn test_json_create_user() {
+    let a_user = TestUser {
+        permission: BitVec::from_bytes(&[0b10100000]),
+    };
+    println!("serdes as {}", serde_json::to_string(&a_user).unwrap());
+
+    let data = r#"{
+        "permission": 0011
+    }"#;
+    let b_user: TestUser = serde_json::from_str(data).unwrap();
+    assert_eq!(a_user, b_user);
+}
