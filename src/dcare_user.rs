@@ -197,7 +197,7 @@ pub(crate) async fn post_signup_api(
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct User {
-    username: String,
+    account: String,
     password: String,
 }
 
@@ -206,7 +206,7 @@ pub(crate) async fn post_login_api(
     Extension(random): Extension<Random>,
     Json(user): Json<User>,
 ) -> impl IntoResponse {
-    match login(&database, random, &user.username, &user.password).await {
+    match login(&database, random, &user.account, &user.password).await {
         Ok(session_token) => {
             let resp = json!({
                 "code": 200,

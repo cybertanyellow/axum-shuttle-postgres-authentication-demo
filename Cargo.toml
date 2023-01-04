@@ -25,3 +25,4 @@ serde = { version = "1.0.152", features = ["derive"] }
 bit-vec = { version = "0.6.3", features = ["serde"] }
 anyhow = "1.0.68"
 chrono = { version = "0.4.23", features = ["serde"] }
+tracing = "0.1.37"

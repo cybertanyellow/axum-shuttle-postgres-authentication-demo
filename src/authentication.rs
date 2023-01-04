@@ -6,6 +6,7 @@ use pbkdf2::{
 };
 use rand_core::{OsRng, RngCore};
 use bit_vec::BitVec;
+use tracing::{info, debug};
 
 use crate::{
     errors::{LoginError, SignupError},
@@ -193,7 +194,7 @@ pub(crate) async fn signup2(
     }
 
     const INSERT_QUERY: &str =
-        "INSERT INTO users (account, password, permission, username, worker_id, title_id, department_id, phone, email, create_time) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP) RETURNING id;";
+        "INSERT INTO users (account, password, permission, username, worker_id, title_id, department_id, phone, email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id;";
 
     let salt = SaltString::generate(&mut OsRng);
 
@@ -237,13 +238,13 @@ pub(crate) async fn signup2(
 pub(crate) async fn login(
     database: &Database,
     random: Random,
-    username: &str,
+    account: &str,
     password: &str,
 ) -> Result<SessionToken, LoginError> {
-    const LOGIN_QUERY: &str = "SELECT id, password FROM users WHERE users.username = $1;";
+    const LOGIN_QUERY: &str = "SELECT id, password FROM users WHERE users.account = $1;";
 
     let row: Option<(i32, String)> = sqlx::query_as(LOGIN_QUERY)
-        .bind(username)
+        .bind(account)
         .fetch_optional(database)
         .await
         .unwrap();

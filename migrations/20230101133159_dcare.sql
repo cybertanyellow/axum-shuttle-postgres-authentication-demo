@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS users (
 
     account text NOT NULL UNIQUE, -- 帳號
     password text NOT NULL,
-    permission bit(7),        -- 群組, ADM(0),GM(1),Maintenance(2),Commissioner(3),JSHall(4)
+    permission bit(8),        -- 群組, ADM(0),GM(1),Maintenance(2),Commissioner(3),JSHall(4)
     username text,                -- 姓名
     worker_id text,               -- 工號
     title_id integer REFERENCES titles (id) ON DELETE CASCADE,           -- 職稱(in titles table)
@@ -36,8 +36,8 @@ CREATE TABLE IF NOT EXISTS users (
     phone text NOT NULL,
     email text NOT NULL,
 
-    create_time timestamptz NOT NULL,   -- 創建時間
-    login_time timestamptz             -- 登人時間(最後)
+    create_at timestamptz NOT NULL DEFAULT NOW(),   -- 創建時間
+    login_at timestamptz             -- 登人時間(最後)
 );
 
 CREATE TABLE IF NOT EXISTS models (
