@@ -88,19 +88,29 @@ pub struct DbUser {
     login_at: Option<DateTime<Local>>,
 }
 
+async fn query_user(
+    account: &str,
+    database: &Database,
+) -> Option<DbUser> {
+    const QUERY: &str = "SELECT u.account, u.permission, u.username, u.worker_id, t.name title_id, d.name department_id, phone, u.email, u.create_at, u.login_at FROM users u INNER JOIN titles t ON t.id = u.title_id INNER JOIN departments d ON d.id = u.department_id WHERE u.account = $1";
+
+    if let Ok(user) = sqlx::query_as::<_, DbUser>(QUERY)
+        .bind(account)
+        .fetch_optional(database)
+        .await {
+            user
+    } else {
+        None
+    }
+}
+
 pub(crate) async fn user_api(
     Path(account): Path<String>,
     //Extension(_auth_state): Extension<AuthState>,
     Extension(database): Extension<Database>,
 ) -> impl IntoResponse {
     /* TODO, limit with auth_state's pemission */
-    const QUERY: &str = "SELECT u.account, u.permission, u.username, u.worker_id, t.name title_id, d.name department_id, phone, u.email, u.create_at, u.login_at FROM users u INNER JOIN titles t ON t.id = u.title_id INNER JOIN departments d ON d.id = u.department_id WHERE u.account = $1";
-
-    if let Ok(Some(user)) = sqlx::query_as::<_, DbUser>(QUERY)
-        .bind(&account)
-        .fetch_optional(&database)
-        .await {
-
+    if let Some(user) = query_user(&account, &database).await {
         let resp = json!({
             "code": 200,
             "user": &user
@@ -113,7 +123,6 @@ pub(crate) async fn user_api(
         (StatusCode::OK, Json(resp)).into_response()
     }
 }
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateUser {
     account: String,
@@ -248,13 +257,22 @@ pub(crate) async fn post_delete_api(
 
 pub(crate) async fn me_api(
     Extension(mut current_user): Extension<AuthState>,
+    Extension(database): Extension<Database>,
 ) -> impl IntoResponse {
-    if let Some(user) = current_user.get_user2().await {
-        let resp = json!({
-            "code": 200,
-            "user": "TODO",
-        });
-        (StatusCode::OK, Json(resp)).into_response()
+    if let Some(user) = current_user.get_user().await {
+        if let Some(user) = query_user(&user.account, &database).await {
+            let resp = json!({
+                "code": 200,
+                "user": &user
+            });
+            (StatusCode::OK, Json(resp)).into_response()
+        } else {
+            let resp = json!({
+                "code": 400,
+                "error": "user non-exist"
+            });
+            (StatusCode::OK, Json(resp)).into_response()
+        }
     } else {
         let resp = json!({
             "code": 400,
@@ -293,6 +311,30 @@ pub(crate) async fn logout_response_api(
         "code": 200,
         "session_key": USER_COOKIE_NAME,
         "session_value": "_",
+    });
+    (StatusCode::OK, Json(resp)).into_response()
+}
+
+pub(crate) async fn update_myself_api(
+    Extension(mut current_user): Extension<AuthState>,
+    Path(account): Path<String>,
+    Extension(database): Extension<Database>,
+) -> impl IntoResponse {
+    let resp = json!({
+        "code": 400,
+        "error": "TODO"
+    });
+    (StatusCode::OK, Json(resp)).into_response()
+}
+
+pub(crate) async fn update_user_api(
+    Extension(mut current_user): Extension<AuthState>,
+    Path(account): Path<String>,
+    Extension(database): Extension<Database>,
+) -> impl IntoResponse {
+    let resp = json!({
+        "code": 400,
+        "error": "TODO"
     });
     (StatusCode::OK, Json(resp)).into_response()
 }

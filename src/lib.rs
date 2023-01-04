@@ -28,6 +28,7 @@ use utils::*;
 use dcare_user::{
     post_signup_api, post_login_api, logout_response_api,
     post_delete_api, me_api, user_api, users_api,
+    update_user_api, update_myself_api,
 };
 
 type Templates = Arc<Tera>;
@@ -75,8 +76,8 @@ pub fn get_router(database: Database) -> Router {
         .route("/api/v1/login", post(post_login_api))
         .route("/api/v1/logout", post(logout_response_api))
         .route("/api/v1/delete", post(post_delete_api))
-        .route("/api/v1/me", get(me_api))
-        .route("/api/v1/user/:username", get(user_api))
+        .route("/api/v1/me", get(me_api).put(update_myself_api))
+        .route("/api/v1/user/:username", get(user_api).put(update_user_api))
         .route("/api/v1/users", get(users_api))
         .layer(middleware::from_fn(move |req, next| {
             auth(req, next, middleware_database.clone())
@@ -114,7 +115,7 @@ async fn user(
         let user_is_self = auth_state
             .get_user()
             .await
-            .map(|logged_in_user| logged_in_user.username == username)
+            .map(|logged_in_user| logged_in_user.account == username)
             .unwrap_or_default();
         let mut context = Context::new();
         context.insert("username", &username);
@@ -227,7 +228,7 @@ async fn me(
     Extension(mut current_user): Extension<AuthState>,
 ) -> Result<impl IntoResponse, impl IntoResponse> {
     if let Some(user) = current_user.get_user().await {
-        Ok(Redirect::to(&format!("/user/{}", user.username)))
+        Ok(Redirect::to(&format!("/user/{}", user.account)))
     } else {
         Err(error_page(&NotLoggedIn))
     }
