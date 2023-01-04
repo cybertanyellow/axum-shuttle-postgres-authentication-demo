@@ -77,24 +77,24 @@ async fn department_id_or_insert(
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct DbUser {
     account: String,
-    permission: BitVec,
-    username: String,
-    worker_id: String,
-    title: String,
-    department: String,
+    permission: Option<BitVec>,
+    username: Option<String>,
+    worker_id: Option<String>,
+    title_id: String,
+    department_id: String,
     phone: String,
     email: String,
-    create_time: DateTime<Local>,
-    login_time: DateTime<Local>,
+    create_at: DateTime<Local>,
+    login_at: Option<DateTime<Local>>,
 }
 
 pub(crate) async fn user_api(
     Path(account): Path<String>,
-    Extension(_auth_state): Extension<AuthState>,
+    //Extension(_auth_state): Extension<AuthState>,
     Extension(database): Extension<Database>,
 ) -> impl IntoResponse {
     /* TODO, limit with auth_state's pemission */
-    const QUERY: &str = "SELECT users.account, users.permission, users.username, users.worker_id, titles.name, departments.name, users.phone, users.email, users.create_time, users.login_time FROM users WHERE account = $1 INNER JOIN titles ON titles.id = users.title_id INNER JOIN departments ON departments.id = users.department_id;";
+    const QUERY: &str = "SELECT u.account, u.permission, u.username, u.worker_id, t.name title_id, d.name department_id, phone, u.email, u.create_at, u.login_at FROM users u INNER JOIN titles t ON t.id = u.title_id INNER JOIN departments d ON d.id = u.department_id WHERE u.account = $1";
 
     if let Ok(Some(user)) = sqlx::query_as::<_, DbUser>(QUERY)
         .bind(&account)
@@ -249,10 +249,10 @@ pub(crate) async fn post_delete_api(
 pub(crate) async fn me_api(
     Extension(mut current_user): Extension<AuthState>,
 ) -> impl IntoResponse {
-    if let Some(user) = current_user.get_user().await {
+    if let Some(user) = current_user.get_user2().await {
         let resp = json!({
             "code": 200,
-            "error": "TODO",
+            "user": "TODO",
         });
         (StatusCode::OK, Json(resp)).into_response()
     } else {
@@ -268,7 +268,7 @@ pub(crate) async fn users_api(
     Extension(database): Extension<Database>,
 ) -> impl IntoResponse {
     //const QUERY: &str = "SELECT username FROM users LIMIT 100;";
-    const QUERY: &str = "SELECT users.account, users.permission, users.username, users.worker_id, titles.name, departments.name, users.phone, users.email, users.create_time, users.login_time FROM users INNER JOIN titles ON titles.id = users.title_id INNER JOIN departments ON departments.id = users.department_id LIMIT 100;";
+    const QUERY: &str = "SELECT u.account, u.permission, u.username, u.worker_id, t.name title_id, d.name department_id, phone, u.email, u.create_at, u.login_at FROM users u INNER JOIN titles t ON t.id = u.title_id INNER JOIN departments d ON d.id = u.department_id";
 
     if let Ok(users) = sqlx::query_as::<_, DbUser>(QUERY)
         .fetch_all(&database)
