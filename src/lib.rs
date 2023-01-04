@@ -1,7 +1,7 @@
 mod authentication;
+mod dcare_user;
 mod errors;
 mod utils;
-mod dcare_user;
 
 use std::sync::{Arc, Mutex};
 
@@ -11,25 +11,25 @@ use axum::{
     middleware,
     response::{Html, IntoResponse, Redirect},
     routing::{any, get, post},
-    Router, Json,
+    Json,
+    Router,
 };
 use http::Response;
 
 use authentication::{auth, delete_user, login, signup, AuthState};
-use errors::{LoginError, NoUser, NotLoggedIn, SignupError};
+use dcare_user::{
+    logout_response_api, me_api, post_delete_api, post_login_api, post_signup_api,
+    update_myself_api, update_user_api, user_api, users_api,
+};
+use errors::{/*LoginError, */ NoUser, NotLoggedIn, SignupError};
 use pbkdf2::password_hash::rand_core::OsRng;
 use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
+use serde::{Deserialize, Serialize};
 use shuttle_service::{error::CustomError, ShuttleAxum};
 use sqlx::Executor;
 use tera::{Context, Tera};
-use serde::{Deserialize, Serialize};
 use utils::*;
-use dcare_user::{
-    post_signup_api, post_login_api, logout_response_api,
-    post_delete_api, me_api, user_api, users_api,
-    update_user_api, update_myself_api,
-};
 
 type Templates = Arc<Tera>;
 type Database = sqlx::PgPool;

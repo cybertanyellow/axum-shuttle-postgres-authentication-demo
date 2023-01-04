@@ -1,11 +1,11 @@
-use std::collections::HashMap;
-
+//use std::collections::HashMap;
 //use axum::extract::Multipart;
 use http::Response;
 use http_body::Empty;
 
 use crate::{
-    authentication::SessionToken, errors::MultipartError, COOKIE_MAX_AGE, USER_COOKIE_NAME,
+    authentication::SessionToken, /*, errors::MultipartError*/
+    COOKIE_MAX_AGE, USER_COOKIE_NAME,
 };
 
 pub(crate) fn login_response(session_token: SessionToken) -> impl axum::response::IntoResponse {

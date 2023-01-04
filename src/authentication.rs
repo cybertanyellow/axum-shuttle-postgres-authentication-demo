@@ -1,18 +1,16 @@
 use std::str::FromStr;
 
+use bit_vec::BitVec;
 use pbkdf2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Pbkdf2,
 };
 use rand_core::{OsRng, RngCore};
-use bit_vec::BitVec;
-use tracing::{info, debug};
-
+//use tracing::{debug, info};
 use crate::{
     errors::{LoginError, SignupError},
     Database, Random, USER_COOKIE_NAME,
 };
-use crate::dcare_user::DbUser;
 
 #[derive(Clone, Copy)]
 pub(crate) struct SessionToken(u128);

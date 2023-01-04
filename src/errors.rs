@@ -1,6 +1,7 @@
 use std::{error::Error, fmt::Display};
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) enum MultipartError {
     NoName,
     InvalidValue,
@@ -31,6 +32,7 @@ impl Display for NotLoggedIn {
 impl Error for NotLoggedIn {}
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) enum SignupError {
     UsernameExists,
     InvalidUsername,
@@ -56,6 +58,7 @@ impl Display for SignupError {
 impl Error for SignupError {}
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) enum LoginError {
     MissingDetails,
     UserDoesNotExist,

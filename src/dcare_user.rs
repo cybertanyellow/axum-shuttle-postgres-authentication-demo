@@ -1,27 +1,26 @@
-use std::sync::{Arc, Mutex};
+//use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::{Extension, Path},
     http::StatusCode,
-    response::{Html, IntoResponse, Redirect},
+    response::IntoResponse,
+    //response::{Html, Redirect},
     Json,
 };
-use http::Response;
+//use http::Response;
 
-use serde::{Deserialize, Serialize, serde_if_integer128};
-use serde_json::json;
+use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
-use anyhow::{Result, anyhow};
 use chrono::{DateTime, Local};
+use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
+use serde_json::json;
 
-use crate::authentication::{auth, delete_user, login, signup2, AuthState};
-use crate::errors::{LoginError, NoUser, NotLoggedIn, SignupError};
-use crate::{Database, Random, COOKIE_MAX_AGE, USER_COOKIE_NAME};
+use crate::authentication::{/*auth, */ delete_user, login, signup2, AuthState};
+use crate::errors::NotLoggedIn;
+//use crate::errors::{LoginError, NoUser, SignupError};
+use crate::{Database, Random, /*COOKIE_MAX_AGE, */ USER_COOKIE_NAME};
 
-async fn title_id_or_insert(
-    database: &Database,
-    name: &str,
-) -> Result<i32> {
+async fn title_id_or_insert(database: &Database, name: &str) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM titles WHERE name = $1;";
     let title: Option<(i32,)> = sqlx::query_as(QUERY)
         .bind(&name)
@@ -32,8 +31,7 @@ async fn title_id_or_insert(
     if let Some((id,)) = title {
         Ok(id)
     } else {
-        const INSERT_QUERY: &str =
-            "INSERT INTO titles (name) VALUES ($1) RETURNING id;";
+        const INSERT_QUERY: &str = "INSERT INTO titles (name) VALUES ($1) RETURNING id;";
         let fetch_one = sqlx::query_as(INSERT_QUERY)
             .bind(name)
             .fetch_one(database)
@@ -46,10 +44,7 @@ async fn title_id_or_insert(
     }
 }
 
-async fn department_id_or_insert(
-    database: &Database,
-    name: &str,
-) -> Result<i32> {
+async fn department_id_or_insert(database: &Database, name: &str) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM departments WHERE name = $1;";
     let title: Option<(i32,)> = sqlx::query_as(QUERY)
         .bind(&name)
@@ -60,8 +55,7 @@ async fn department_id_or_insert(
     if let Some((id,)) = title {
         Ok(id)
     } else {
-        const INSERT_QUERY: &str =
-            "INSERT INTO departments (name) VALUES ($1) RETURNING id;";
+        const INSERT_QUERY: &str = "INSERT INTO departments (name) VALUES ($1) RETURNING id;";
         let fetch_one = sqlx::query_as(INSERT_QUERY)
             .bind(name)
             .fetch_one(database)
@@ -88,17 +82,15 @@ pub struct DbUser {
     login_at: Option<DateTime<Local>>,
 }
 
-async fn query_user(
-    account: &str,
-    database: &Database,
-) -> Option<DbUser> {
+async fn query_user(account: &str, database: &Database) -> Option<DbUser> {
     const QUERY: &str = "SELECT u.account, u.permission, u.username, u.worker_id, t.name title_id, d.name department_id, phone, u.email, u.create_at, u.login_at FROM users u INNER JOIN titles t ON t.id = u.title_id INNER JOIN departments d ON d.id = u.department_id WHERE u.account = $1";
 
     if let Ok(user) = sqlx::query_as::<_, DbUser>(QUERY)
         .bind(account)
         .fetch_optional(database)
-        .await {
-            user
+        .await
+    {
+        user
     } else {
         None
     }
@@ -151,41 +143,48 @@ pub(crate) async fn post_signup_api(
     }
 
     let title_id = match user.title {
-        Some(title) => {
-            match title_id_or_insert(&database, &title).await {
-                Ok(id) => id,
-                Err(e) => {
-                    let resp = json!({
-                        "code": 400,
-                        "error": "title non-exist",
-                    });
-                    return (StatusCode::OK, Json(resp)).into_response();
-                }
+        Some(title) => match title_id_or_insert(&database, &title).await {
+            Ok(id) => id,
+            Err(e) => {
+                let resp = json!({
+                    "code": 400,
+                    "error": &format!("title non-exist{e}"),
+                });
+                return (StatusCode::OK, Json(resp)).into_response();
             }
         },
         None => 0,
     };
-
 
     let department_id = match user.department {
-        Some(department) => {
-            match department_id_or_insert(&database, &department).await {
-                Ok(id) => id,
-                Err(e) => {
-                    let resp = json!({
-                        "code": 400,
-                        "error": "department non-exist",
-                    });
-                    return (StatusCode::OK, Json(resp)).into_response();
-                }
+        Some(department) => match department_id_or_insert(&database, &department).await {
+            Ok(id) => id,
+            Err(e) => {
+                let resp = json!({
+                    "code": 400,
+                    "error": &format!("department non-exist{e}"),
+                });
+                return (StatusCode::OK, Json(resp)).into_response();
             }
         },
         None => 0,
     };
 
-    match signup2(&database, random, &user.account, &user.password,
-                 &user.permission, &user.username, &user.worker_id,
-                 title_id, department_id, &user.phone, &user.email).await {
+    match signup2(
+        &database,
+        random,
+        &user.account,
+        &user.password,
+        &user.permission,
+        &user.username,
+        &user.worker_id,
+        title_id,
+        department_id,
+        &user.phone,
+        &user.email,
+    )
+    .await
+    {
         Ok(session_token) => {
             let resp = json!({
                 "code": 200,
@@ -193,14 +192,14 @@ pub(crate) async fn post_signup_api(
                 "session_value": session_token.into_cookie_value(),
             });
             (StatusCode::OK, Json(resp)).into_response()
-        },
+        }
         Err(error) => {
             let resp = json!({
                 "code": 400,
                 "error": format!("{}", error),
             });
             (StatusCode::OK, Json(resp)).into_response()
-        },
+        }
     }
 }
 
@@ -223,19 +222,19 @@ pub(crate) async fn post_login_api(
                 "session_value": session_token.into_cookie_value(),
             });
             (StatusCode::OK, Json(resp)).into_response()
-        },
+        }
         Err(error) => {
             let resp = json!({
                 "code": 400,
                 "error": format!("{}", error),
             });
             (StatusCode::OK, Json(resp)).into_response()
-        },
+        }
     }
 }
 
 pub(crate) async fn post_delete_api(
-    Extension(current_user): Extension<AuthState>
+    Extension(current_user): Extension<AuthState>,
 ) -> impl IntoResponse {
     if !current_user.logged_in() {
         let resp = json!({
@@ -282,16 +281,14 @@ pub(crate) async fn me_api(
     }
 }
 
-pub(crate) async fn users_api(
-    Extension(database): Extension<Database>,
-) -> impl IntoResponse {
+pub(crate) async fn users_api(Extension(database): Extension<Database>) -> impl IntoResponse {
     //const QUERY: &str = "SELECT username FROM users LIMIT 100;";
     const QUERY: &str = "SELECT u.account, u.permission, u.username, u.worker_id, t.name title_id, d.name department_id, phone, u.email, u.create_at, u.login_at FROM users u INNER JOIN titles t ON t.id = u.title_id INNER JOIN departments d ON d.id = u.department_id";
 
     if let Ok(users) = sqlx::query_as::<_, DbUser>(QUERY)
         .fetch_all(&database)
-        .await {
-
+        .await
+    {
         let resp = json!({
             "code": 200,
             "users": &users
@@ -305,8 +302,7 @@ pub(crate) async fn users_api(
     }
 }
 
-pub(crate) async fn logout_response_api(
-) -> impl IntoResponse {
+pub(crate) async fn logout_response_api() -> impl IntoResponse {
     let resp = json!({
         "code": 200,
         "session_key": USER_COOKIE_NAME,
@@ -316,9 +312,9 @@ pub(crate) async fn logout_response_api(
 }
 
 pub(crate) async fn update_myself_api(
-    Extension(mut current_user): Extension<AuthState>,
-    Path(account): Path<String>,
-    Extension(database): Extension<Database>,
+    Extension(mut _current_user): Extension<AuthState>,
+    Path(_account): Path<String>,
+    Extension(_database): Extension<Database>,
 ) -> impl IntoResponse {
     let resp = json!({
         "code": 400,
@@ -328,9 +324,9 @@ pub(crate) async fn update_myself_api(
 }
 
 pub(crate) async fn update_user_api(
-    Extension(mut current_user): Extension<AuthState>,
-    Path(account): Path<String>,
-    Extension(database): Extension<Database>,
+    Extension(mut _current_user): Extension<AuthState>,
+    Path(_account): Path<String>,
+    Extension(_database): Extension<Database>,
 ) -> impl IntoResponse {
     let resp = json!({
         "code": 400,
