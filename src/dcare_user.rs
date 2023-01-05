@@ -438,9 +438,24 @@ pub(crate) async fn update_user_api(
     let mut code = 200;
     let mut error = String::from("none");
 
+    let target = match query_user(&account, &database).await {
+        Some(u) => u,
+        None => {
+            let resp = json!({
+                "code": 401,
+                "error": "user not found",
+            });
+            return (StatusCode::OK, Json(resp)).into_response();
+        }
+    };
+
     if let Some(user) = current_user.get_user().await {
-        info!("TODO, user-{} is administrator?", user.account);
+        info!("TODO, user-{}/{:?} is administrator?",
+              user.account, user.permission);
+    } else {
+        error!("TODO, not login");
     }
+    
     match user.password {
         None => info!("passowrd no change"),
         Some(pwd) => {

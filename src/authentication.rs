@@ -43,32 +43,36 @@ impl SessionToken {
 }
 
 #[derive(Clone)]
-pub(crate) struct User {
+pub(crate) struct CurrentUser {
     pub account: String,
+    pub permission: BitVec,
 }
 
 #[derive(Clone)]
-pub(crate) struct AuthState(Option<(SessionToken, Option<User>, Database)>);
+pub(crate) struct AuthState(Option<(SessionToken, Option<CurrentUser>, Database)>);
 
 impl AuthState {
     pub fn logged_in(&self) -> bool {
         self.0.is_some()
     }
 
-    pub async fn get_user(&mut self) -> Option<&User> {
+    pub async fn get_user(&mut self) -> Option<&CurrentUser> {
         let (session_token, store, database) = self.0.as_mut()?;
         if store.is_none() {
             const QUERY: &str =
-                "SELECT id, account FROM users JOIN sessions ON user_id = id WHERE session_token = $1;";
+                "SELECT id, account, permission FROM users JOIN sessions ON user_id = id WHERE session_token = $1;";
 
-            let user: Option<(i32, String)> = sqlx::query_as(QUERY)
+            let user: Option<(i32, String, BitVec)> = sqlx::query_as(QUERY)
                 .bind(&session_token.into_database_value())
                 .fetch_optional(&*database)
                 .await
                 .unwrap();
 
-            if let Some((_id, account)) = user {
-                *store = Some(User { account });
+            if let Some((_id, account, permission)) = user {
+                *store = Some(CurrentUser {
+                    account,
+                    permission,
+                });
             }
         }
         store.as_ref()
