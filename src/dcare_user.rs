@@ -72,7 +72,7 @@ async fn department_id_or_insert(database: &Database, name: &str) -> Result<i32>
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct DbUser {
     account: String,
-    permission: Option<BitVec>,
+    permission: BitVec,
     username: Option<String>,
     worker_id: Option<String>,
     title: String,
@@ -429,6 +429,47 @@ pub struct UpdateUser {
     email: Option<String>,
 }
 
+#[derive(Debug)]
+enum PermissionRole {
+    Admin(String),
+    Gm(String),
+    Maintainer(String),
+    Comissioner(String),
+    Jshall(String),
+    Other(String),
+}
+
+impl From<&BitVec> for PermissionRole {
+    fn from(p: &BitVec) -> Self {
+        if let Some(r) = p.get(0) {
+            if r == true {
+                return Self::Admin("admin".to_string());
+            }
+        }
+        if let Some(r) = p.get(1) {
+            if r == true {
+                return Self::Gm("GM".to_string());
+            }
+        }
+        if let Some(r) = p.get(2) {
+            if r == true {
+                return Self::Maintainer("Maintainer".to_string());
+            }
+        }
+        if let Some(r) = p.get(3) {
+            if r == true {
+                return Self::Comissioner("Comissioner".to_string());
+            }
+        }
+        if let Some(r) = p.get(4) {
+            if r == true {
+                return Self::Jshall("JSHall".to_string());
+            }
+        }
+        Self::Other("other".to_string())
+    }
+}
+
 pub(crate) async fn update_user_api(
     Extension(mut current_user): Extension<AuthState>,
     Path(account): Path<String>,
@@ -449,11 +490,53 @@ pub(crate) async fn update_user_api(
         }
     };
 
-    if let Some(user) = current_user.get_user().await {
-        info!("TODO, user-{}/{:?} is administrator?",
-              user.account, user.permission);
+    let allow = if let Some(current) = current_user.get_user().await {
+        let current_role = PermissionRole::from(&current.permission);
+        let target_role = PermissionRole::from(&target.permission);
+
+        info!("TODO, user-{}/{:?} is {:?} try to change {:?}",
+              current.account, current.permission,
+              current_role, target_role);
+
+        match (current_role, target_role) {
+            (PermissionRole::Admin(role), _) => {
+                info!("{role} change anything");
+                true
+            },
+            (PermissionRole::Gm(role), PermissionRole::Admin(_)) => {
+                error!("{role} can't change admin");
+                false
+            },
+            (PermissionRole::Gm(role), PermissionRole::Gm(_)) => {
+                if target.account != current.account {
+                    error!("{role} can't change other GM");
+                    false
+                } else {
+                    info!("{role} change herself");
+                    true
+                }
+            },
+            (PermissionRole::Gm(role), _) => {
+                info!("{role} change other");
+                true
+            },
+            (_, _) => {
+                error!("staff can't change each other");
+                false
+            }
+        }
+
     } else {
         error!("TODO, not login");
+        false
+    };
+
+    if allow == false {
+        let resp = json!({
+            "code": 401,
+            "error": "permission deny",
+        });
+        return (StatusCode::OK, Json(resp)).into_response();
     }
     
     match user.password {
