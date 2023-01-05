@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
 use pbkdf2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
@@ -7,6 +8,7 @@ use pbkdf2::{
 };
 use rand_core::{OsRng, RngCore};
 //use tracing::{debug, info};
+
 use crate::{
     errors::{LoginError, SignupError},
     Database, Random, USER_COOKIE_NAME,
@@ -168,6 +170,19 @@ pub(crate) async fn signup(
     Ok(new_session(database, random, user_id).await)
 }
 
+pub(crate) fn password_hashed(password: &str) -> Result<String> {
+    let salt = SaltString::generate(&mut OsRng);
+
+    // Hash password to PHC string ($pbkdf2-sha256$...)
+    let password_hash = Pbkdf2.hash_password(password.as_bytes(), &salt);
+
+    if let Ok(password) = password_hash {
+        Ok(password.to_string())
+    } else {
+        Err(anyhow!("invalid password"))
+    }
+}
+
 pub(crate) async fn signup2(
     database: &Database,
     random: Random,
@@ -195,13 +210,8 @@ pub(crate) async fn signup2(
     const INSERT_QUERY: &str =
         "INSERT INTO users (account, password, permission, username, worker_id, title_id, department_id, phone, email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id;";
 
-    let salt = SaltString::generate(&mut OsRng);
-
-    // Hash password to PHC string ($pbkdf2-sha256$...)
-    let password_hash = Pbkdf2.hash_password(password.as_bytes(), &salt);
-
-    let hashed_password = if let Ok(password) = password_hash {
-        password.to_string()
+    let hashed_password = if let Ok(pwd) = password_hashed(password) {
+        pwd
     } else {
         return Err(SignupError::InvalidPassword);
     };
