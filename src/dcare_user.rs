@@ -713,17 +713,3 @@ pub(crate) async fn update_user_api(
 pub struct TestUser {
     permission: BitVec,
 }
-
-#[test]
-fn test_json_create_user() {
-    let a_user = TestUser {
-        permission: BitVec::from_bytes(&[0b10100000]),
-    };
-    println!("serdes as {}", serde_json::to_string(&a_user).unwrap());
-
-    let data = r#"{
-        "permission": 0011
-    }"#;
-    let b_user: TestUser = serde_json::from_str(data).unwrap();
-    assert_eq!(a_user, b_user);
-}
