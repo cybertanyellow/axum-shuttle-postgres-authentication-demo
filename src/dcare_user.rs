@@ -306,7 +306,7 @@ pub struct ApiResponse {
 
 #[utoipa::path(
     delete,
-    path = "/api/v1/delete/{account}",
+    path = "/api/v1/user/{account}",
     params(
         ("account" = String, Path, description = "user to delete")
     ),
