@@ -29,11 +29,11 @@ use serde::{Deserialize, Serialize};
 use shuttle_service::{error::CustomError, ShuttleAxum};
 use sqlx::Executor;
 use tera::{Context, Tera};
-use utoipa_swagger_ui::SwaggerUi;
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
     Modify, OpenApi,
 };
+use utoipa_swagger_ui::SwaggerUi;
 
 use utils::*;
 
@@ -101,9 +101,9 @@ pub fn get_router(database: Database) -> Router {
         fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
             if let Some(components) = openapi.components.as_mut() {
                 components.add_security_scheme(
-                    USER_COOKIE_NAME,
-                    SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("user_apikey"))),
-                    )
+                    "logined cookie/session-id",
+                    SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(USER_COOKIE_NAME))),
+                )
             }
         }
     }
@@ -124,15 +124,11 @@ pub fn get_router(database: Database) -> Router {
         .route("/api/v1/logout", post(logout_response_api))
         //.route("/api/v1/delete/:account", post(post_delete_api))
         .route("/api/v1/me", get(me_api).put(update_myself_api))
-        .route("/api/v1/user/:account",
-               get(user_api)
-               .put(update_user_api)
-               .delete(post_delete_api)
-              )
-        .route("/api/v1/user",
-               get(users_api)
-               .post(post_signup_api)
-               )
+        .route(
+            "/api/v1/user/:account",
+            get(user_api).put(update_user_api).delete(post_delete_api),
+        )
+        .route("/api/v1/user", get(users_api).post(post_signup_api))
         .layer(middleware::from_fn(move |req, next| {
             auth(req, next, middleware_database.clone())
         }))

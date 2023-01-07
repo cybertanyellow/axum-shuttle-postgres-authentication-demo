@@ -15,9 +15,11 @@ use chrono::{DateTime, Utc};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, error, info};
-    use utoipa::{IntoParams, ToSchema};
+use utoipa::{IntoParams, ToSchema};
 
-use crate::authentication::{/*auth, */ delete_user, login, password_hashed, signup2, AuthState, CurrentUser,};
+use crate::authentication::{
+    /*auth, */ delete_user, login, password_hashed, signup2, AuthState, CurrentUser,
+};
 use crate::errors::NotLoggedIn;
 //use crate::errors::{LoginError, NoUser, SignupError};
 use crate::{Database, Random, /*COOKIE_MAX_AGE, */ USER_COOKIE_NAME};
@@ -156,15 +158,15 @@ pub struct UserNew {
     request_body = UserNew,
     responses(
         (status = 200, description = "add user success", body = ApiResponse, example = json!(ApiResponse {
-            code: 200, 
+            code: 200,
             message: Some(String::from("success")),
         })),
         (status = 400, description = "user exist, ", body = ApiResponse, example = json!(ApiResponse {
-            code: 400, 
+            code: 400,
             message: Some(String::from("..."))
         })),
         (status = 500, description = "server DB error, ", body = ApiResponse, example = json!(ApiResponse {
-            code: 500, 
+            code: 500,
             message: Some(String::from("..."))
         })),
     ),
@@ -226,9 +228,7 @@ pub(crate) async fn post_signup_api(
     )
     .await
     {
-        Ok(_session_token) => {
-            (StatusCode::OK, Json(resp)).into_response()
-        }
+        Ok(_session_token) => (StatusCode::OK, Json(resp)).into_response(),
         Err(error) => {
             resp.message = Some(format!("{error}"));
             resp.code = 500;
@@ -258,13 +258,13 @@ pub struct ResponseUserLogin {
     request_body = UserLogin,
     responses(
         (status = 200, description = "login success, return cookie session key/value", body = ResponseUserLogin, example = json!(ResponseUserLogin {
-            code: 200, 
+            code: 200,
             session_key: Some(String::from("cookie key")),
             session_value: Some(String::from("cookie value")),
             message: Some(String::from("...")),
         })),
         (status = 404, description = "user not found, ", body = ResponseUserLogin, example = json!(ResponseUserLogin {
-            code: 404, 
+            code: 404,
             session_key: None,
             session_value: None,
             message: Some(String::from("..."))
@@ -312,21 +312,21 @@ pub struct ApiResponse {
     ),
     responses(
         (status = 200, description = "delete success", body = ApiResponse, example = json!(ApiResponse {
-            code: 200, 
+            code: 200,
             message: Some(String::from("success")),
         })),
         (status = 404, description = "user not found, ", body = ApiResponse, example = json!(ApiResponse {
-            code: 404, 
+            code: 404,
             message: Some(String::from("..."))
         })),
         (status = 405, description = "permission deny", body = ApiResponse, example = json!(ApiResponse {
-            code: 405, 
+            code: 405,
             message: Some(String::from("..."))
         })),
     ),
     security(
         //(), // <-- make optional authentication
-        ("user_token" = [])
+        ("logined cookie/session-id" = [])
     ),
 )]
 pub(crate) async fn post_delete_api(
@@ -366,17 +366,17 @@ pub(crate) async fn post_delete_api(
     responses(
         (status = 200, description = "get detail user information", body = ResponseUser),
         (status = 400, description = "not login, ", body = ApiResponse, example = json!(ApiResponse {
-            code: 400, 
+            code: 400,
             message: Some(String::from("..."))
         })),
         (status = 404, description = "user not found, ", body = ApiResponse, example = json!(ApiResponse {
-            code: 404, 
+            code: 404,
             message: Some(String::from("..."))
         })),
     ),
     security(
         //(), // <-- make optional authentication
-        ("user_token" = [])
+        ("logined cookie/session-id" = [])
     ),
 )]
 pub(crate) async fn me_api(
@@ -385,10 +385,7 @@ pub(crate) async fn me_api(
 ) -> impl IntoResponse {
     if let Some(user) = current_user.get_user().await {
         if let Some(user) = query_user(&user.account, &database).await {
-            let resp = ResponseUser {
-                code: 200,
-                user,
-            };
+            let resp = ResponseUser { code: 200, user };
             (StatusCode::OK, Json(resp)).into_response()
         } else {
             let resp = ApiResponse {
@@ -419,9 +416,7 @@ pub struct ResponseUsers {
         (status = 200, description = "get user list", body = ResponseUsers)
     )
 )]
-pub(crate) async fn users_api(
-    Extension(database): Extension<Database>
-) -> impl IntoResponse {
+pub(crate) async fn users_api(Extension(database): Extension<Database>) -> impl IntoResponse {
     //const QUERY: &str = "SELECT username FROM users LIMIT 100;";
     const QUERY: &str = "SELECT u.account, u.permission, u.username, u.worker_id, t.name title, d.name department, phone, u.email, u.create_at, u.login_at FROM users u INNER JOIN titles t ON t.id = u.title_id INNER JOIN departments d ON d.id = u.department_id";
 
@@ -466,21 +461,21 @@ pub struct UpdateMe {
     request_body = UpdateMe,
     responses(
         (status = 200, description = "delete success", body = ApiResponse, example = json!(ApiResponse {
-            code: 200, 
+            code: 200,
             message: Some(String::from("success")),
         })),
         (status = 405, description = "permission deny, ", body = ApiResponse, example = json!(ApiResponse {
-            code: 405, 
+            code: 405,
             message: Some(String::from("..."))
         })),
         (status = 500, description = "server error, ", body = ApiResponse, example = json!(ApiResponse {
-            code: 500, 
+            code: 500,
             message: Some(String::from("..."))
         })),
     ),
     security(
         //(), // <-- make optional authentication
-        ("user_token" = [])
+        ("logined cookie/session-id" = [])
     ),
 )]
 pub(crate) async fn update_myself_api(
@@ -643,25 +638,25 @@ impl From<&BitVec> for PermissionRole {
     request_body = UpdateUser,
     responses(
         (status = 200, description = "delete success", body = ApiResponse, example = json!(ApiResponse {
-            code: 200, 
+            code: 200,
             message: Some(String::from("success")),
         })),
         (status = 404, description = "user not found, ", body = ApiResponse, example = json!(ApiResponse {
-            code: 404, 
+            code: 404,
             message: Some(String::from("..."))
         })),
         (status = 405, description = "permission deny, ", body = ApiResponse, example = json!(ApiResponse {
-            code: 405, 
+            code: 405,
             message: Some(String::from("..."))
         })),
         (status = 500, description = "server error, ", body = ApiResponse, example = json!(ApiResponse {
-            code: 500, 
+            code: 500,
             message: Some(String::from("..."))
         })),
     ),
     security(
         //(), // <-- make optional authentication
-        ("user_token" = [])
+        ("logined cookie/session-id" = [])
     ),
 )]
 pub(crate) async fn update_user_api(
@@ -731,7 +726,7 @@ pub(crate) async fn update_user_api(
         resp.message = Some(String::from("permission deny"));
         return (StatusCode::OK, Json(resp)).into_response();
     }
-    
+
     match user.password {
         None => info!("passowrd no change"),
         Some(pwd) => {
@@ -835,7 +830,7 @@ pub(crate) async fn update_user_api(
                 resp.message = Some(format!("title-id fail {e}"));
                 resp.code = 500;
                 error!("{:?}", &resp);
-            },
+            }
         }
     }
 
@@ -903,27 +898,25 @@ pub(crate) async fn update_user_api(
     (StatusCode::OK, Json(resp)).into_response()
 }
 
-fn permission_check(
-    current: Option<&CurrentUser>,
-    target: &UserInfo,
-) -> bool {
+fn permission_check(current: Option<&CurrentUser>, target: &UserInfo) -> bool {
     if let Some(current) = current {
         let current_role = PermissionRole::from(&current.permission);
         let target_role = PermissionRole::from(&target.permission);
 
-        info!("TODO, user-{}/{:?} is {:?} try to change {:?}",
-              current.account, current.permission,
-              current_role, target_role);
+        info!(
+            "TODO, user-{}/{:?} is {:?} try to change {:?}",
+            current.account, current.permission, current_role, target_role
+        );
 
         match (current_role, target_role) {
             (PermissionRole::Admin(role), _) => {
                 info!("{role} change anything");
                 true
-            },
+            }
             (PermissionRole::Gm(role), PermissionRole::Admin(_)) => {
                 error!("{role} can't change admin");
                 false
-            },
+            }
             (PermissionRole::Gm(role), PermissionRole::Gm(_)) => {
                 if target.account != current.account {
                     error!("{role} can't change other GM");
@@ -932,17 +925,16 @@ fn permission_check(
                     info!("{role} change herself");
                     true
                 }
-            },
+            }
             (PermissionRole::Gm(role), _) => {
                 info!("{role} change other");
                 true
-            },
+            }
             (_, _) => {
                 error!("staff can't change each other");
                 false
             }
         }
-
     } else {
         error!("TODO, not login");
         false
