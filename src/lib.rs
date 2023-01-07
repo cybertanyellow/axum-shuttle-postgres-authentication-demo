@@ -71,13 +71,22 @@ pub fn get_router(database: Database) -> Router {
     #[derive(OpenApi)]
     #[openapi(
         paths(
-            dcare_user::user_api,
             dcare_user::post_signup_api,
+            dcare_user::post_login_api,
+            dcare_user::post_delete_api,
+            dcare_user::me_api,
+            dcare_user::update_myself_api,
+            dcare_user::user_api,
+            dcare_user::update_user_api,
+            dcare_user::users_api,
         ),
         components(
-            schemas(dcare_user::UserInfo, dcare_user::ResponseUser,
-                    dcare_user::CreateUser, dcare_user::ResponseCreateUser,
-                    )
+            schemas(
+                dcare_user::UserLogin, dcare_user::ResponseUserLogin, dcare_user::UserNew,
+                dcare_user::UserInfo, dcare_user::ResponseUser, dcare_user::ResponseUsers,
+                dcare_user::UpdateMe, dcare_user::UpdateUser,
+                dcare_user::ApiResponse,
+            )
         ),
         modifiers(&SecurityAddon),
         tags(
@@ -108,15 +117,22 @@ pub fn get_router(database: Database) -> Router {
         .route("/delete", post(post_delete))
         .route("/me", get(me))
         .route("/user/:username", get(user))
-        .route("/users", get(users))
-        .route("/styles.css", any(styles))*/
-        .route("/api/v1/signup", post(post_signup_api))
+        .route("/users", get(users))*/
+        .route("/styles.css", any(styles))
+        //.route("/api/v1/signup", post(post_signup_api))
         .route("/api/v1/login", post(post_login_api))
         .route("/api/v1/logout", post(logout_response_api))
-        .route("/api/v1/delete", post(post_delete_api))
+        //.route("/api/v1/delete/:account", post(post_delete_api))
         .route("/api/v1/me", get(me_api).put(update_myself_api))
-        .route("/api/v1/user/:username", get(user_api).put(update_user_api))
-        .route("/api/v1/users", get(users_api))
+        .route("/api/v1/user/:account",
+               get(user_api)
+               .put(update_user_api)
+               .delete(post_delete_api)
+              )
+        .route("/api/v1/user",
+               get(users_api)
+               .post(post_signup_api)
+               )
         .layer(middleware::from_fn(move |req, next| {
             auth(req, next, middleware_database.clone())
         }))
@@ -135,6 +151,7 @@ async fn index(
     Html(templates.render("index", &context).unwrap())
 }
 
+#[allow(dead_code)]
 async fn user(
     Path(username): Path<String>,
     Extension(mut auth_state): Extension<AuthState>,
@@ -164,10 +181,12 @@ async fn user(
     }
 }
 
+#[allow(dead_code)]
 async fn get_signup(Extension(templates): Extension<Templates>) -> impl IntoResponse {
     Html(templates.render("signup", &Context::new()).unwrap())
 }
 
+#[allow(dead_code)]
 async fn get_login(Extension(templates): Extension<Templates>) -> impl IntoResponse {
     Html(templates.render("login", &Context::new()).unwrap())
 }
@@ -179,6 +198,7 @@ struct CreateUser {
     confirm_password: String,
 }
 
+#[allow(dead_code)]
 async fn post_signup(
     Extension(database): Extension<Database>,
     Extension(random): Extension<Random>,
@@ -221,6 +241,7 @@ struct User {
     password: String,
 }
 
+#[allow(dead_code)]
 async fn post_login(
     Extension(database): Extension<Database>,
     Extension(random): Extension<Random>,
@@ -244,6 +265,7 @@ async fn post_login(
     }
 }
 
+#[allow(dead_code)]
 async fn post_delete(Extension(current_user): Extension<AuthState>) -> impl IntoResponse {
     if !current_user.logged_in() {
         return Err(error_page(&NotLoggedIn));
@@ -262,6 +284,7 @@ async fn styles() -> impl IntoResponse {
         .unwrap()
 }
 
+#[allow(dead_code)]
 async fn me(
     Extension(mut current_user): Extension<AuthState>,
 ) -> Result<impl IntoResponse, impl IntoResponse> {
@@ -272,6 +295,7 @@ async fn me(
     }
 }
 
+#[allow(dead_code)]
 async fn users(
     Extension(database): Extension<Database>,
     Extension(templates): Extension<Templates>,

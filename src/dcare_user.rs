@@ -17,7 +17,7 @@ use serde_json::json;
 use tracing::{debug, error, info};
     use utoipa::{IntoParams, ToSchema};
 
-use crate::authentication::{/*auth, */ delete_user, login, password_hashed, signup2, AuthState,};
+use crate::authentication::{/*auth, */ delete_user, login, password_hashed, signup2, AuthState, CurrentUser,};
 use crate::errors::NotLoggedIn;
 //use crate::errors::{LoginError, NoUser, SignupError};
 use crate::{Database, Random, /*COOKIE_MAX_AGE, */ USER_COOKIE_NAME};
@@ -106,9 +106,12 @@ pub struct ResponseUser {
 
 #[utoipa::path(
     get,
-    path = "/api/v1/user/:username",
+    path = "/api/v1/user/{account}",
+    params(
+        ("account" = String, Path, description = "user account")
+    ),
     responses(
-        (status = 200, description = "get detail user information", body = [ResponseUser])
+        (status = 200, description = "get detail user information", body = ResponseUser)
     )
 )]
 pub(crate) async fn user_api(
@@ -133,7 +136,7 @@ pub(crate) async fn user_api(
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
-pub struct CreateUser {
+pub struct UserNew {
     account: String,
     password: String,
     permission: BitVec,
@@ -145,36 +148,48 @@ pub struct CreateUser {
     email: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct ResponseCreateUser {
-    code: u16,
-    session_key: String,
-    session_value: String,
-}
-
 #[utoipa::path(
     post,
-    path = "/api/v1/signup",
-    params(
-        CreateUser,
-    ),
+    path = "/api/v1/user",
+    request_body = UserNew,
     responses(
-        (status = 200, description = "return cookie/session key/value", body = [ResponseCreateUser])
-    )
+        (status = 200, description = "add user success", body = ApiResponse, example = json!(ApiResponse {
+            code: 200, 
+            message: Some(String::from("success")),
+        })),
+        (status = 400, description = "user exist, ", body = ApiResponse, example = json!(ApiResponse {
+            code: 400, 
+            message: Some(String::from("..."))
+        })),
+        (status = 500, description = "server DB error, ", body = ApiResponse, example = json!(ApiResponse {
+            code: 500, 
+            message: Some(String::from("..."))
+        })),
+    ),
 )]
 pub(crate) async fn post_signup_api(
     Extension(database): Extension<Database>,
     Extension(random): Extension<Random>,
-    Json(user): Json<CreateUser>,
+    Json(user): Json<UserNew>,
 ) -> impl IntoResponse {
+    let mut resp = ApiResponse {
+        code: 200,
+        message: Some(String::from("success")),
+    };
+
+    if query_user(&user.account, &database).await.is_some() {
+        resp.code = 400;
+        resp.message = Some("user exist".to_string());
+        return (StatusCode::OK, Json(resp)).into_response();
+    }
+
     let title_id = match user.title {
         Some(title) => match title_id_or_insert(&database, &title).await {
             Ok(id) => id,
             Err(e) => {
-                let resp = json!({
-                    "code": 400,
-                    "error": &format!("title non-exist{e}"),
-                });
+                resp.message = Some(format!("{e}"));
+                resp.code = 500;
+                error!("{:?}", &resp);
                 return (StatusCode::OK, Json(resp)).into_response();
             }
         },
@@ -185,10 +200,9 @@ pub(crate) async fn post_signup_api(
         Some(department) => match department_id_or_insert(&database, &department).await {
             Ok(id) => id,
             Err(e) => {
-                let resp = json!({
-                    "code": 400,
-                    "error": &format!("department non-exist{e}"),
-                });
+                resp.message = Some(format!("{e}"));
+                resp.code = 500;
+                error!("{:?}", &resp);
                 return (StatusCode::OK, Json(resp)).into_response();
             }
         },
@@ -210,103 +224,194 @@ pub(crate) async fn post_signup_api(
     )
     .await
     {
-        Ok(session_token) => {
-            let resp = json!({
-                "code": 200,
-                "session_key": USER_COOKIE_NAME,
-                "session_value": session_token.into_cookie_value(),
-            });
+        Ok(_session_token) => {
             (StatusCode::OK, Json(resp)).into_response()
         }
         Err(error) => {
-            let resp = json!({
-                "code": 400,
-                "error": format!("{}", error),
-            });
+            resp.message = Some(format!("{error}"));
+            resp.code = 500;
+            error!("{:?}", &resp);
             (StatusCode::OK, Json(resp)).into_response()
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct User {
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
+pub struct UserLogin {
     account: String,
     password: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams, Default)]
+pub struct ResponseUserLogin {
+    code: u16,
+    session_key: Option<String>,
+    session_value: Option<String>,
+    message: Option<String>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/login",
+    request_body = UserLogin,
+    responses(
+        (status = 200, description = "login success, return cookie session key/value", body = ResponseUserLogin, example = json!(ResponseUserLogin {
+            code: 200, 
+            session_key: Some(String::from("cookie key")),
+            session_value: Some(String::from("cookie value")),
+            message: Some(String::from("...")),
+        })),
+        (status = 404, description = "user not found, ", body = ResponseUserLogin, example = json!(ResponseUserLogin {
+            code: 404, 
+            session_key: None,
+            session_value: None,
+            message: Some(String::from("..."))
+        })),
+    )
+)]
 pub(crate) async fn post_login_api(
     Extension(database): Extension<Database>,
     Extension(random): Extension<Random>,
-    Json(user): Json<User>,
+    Json(user): Json<UserLogin>,
 ) -> impl IntoResponse {
     match login(&database, random, &user.account, &user.password).await {
         Ok(session_token) => {
-            let resp = json!({
-                "code": 200,
-                "session_key": USER_COOKIE_NAME,
-                "session_value": session_token.into_cookie_value(),
-            });
+            let resp = ResponseUserLogin {
+                code: 200,
+                session_key: Some(USER_COOKIE_NAME.to_string()),
+                session_value: Some(session_token.into_cookie_value()),
+                message: None,
+            };
             (StatusCode::OK, Json(resp)).into_response()
         }
         Err(error) => {
-            let resp = json!({
-                "code": 400,
-                "error": format!("{}", error),
-            });
-            (StatusCode::OK, Json(resp)).into_response()
+            let resp = ResponseUserLogin {
+                code: 404,
+                session_key: None,
+                session_value: None,
+                message: Some(format!("{}", error)),
+            };
+            (StatusCode::NOT_FOUND, Json(resp)).into_response()
         }
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams, Default)]
+pub struct ApiResponse {
+    code: u16,
+    message: Option<String>,
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/delete/{account}",
+    params(
+        ("account" = String, Path, description = "user to delete")
+    ),
+    responses(
+        (status = 200, description = "delete success", body = ApiResponse, example = json!(ApiResponse {
+            code: 200, 
+            message: Some(String::from("success")),
+        })),
+        (status = 404, description = "user not found, ", body = ApiResponse, example = json!(ApiResponse {
+            code: 404, 
+            message: Some(String::from("..."))
+        })),
+        (status = 405, description = "permission deny", body = ApiResponse, example = json!(ApiResponse {
+            code: 405, 
+            message: Some(String::from("..."))
+        })),
+    )
+)]
 pub(crate) async fn post_delete_api(
-    Extension(current_user): Extension<AuthState>,
+    Extension(mut current_user): Extension<AuthState>,
+    Extension(database): Extension<Database>,
+    Path(account): Path<String>,
 ) -> impl IntoResponse {
-    if !current_user.logged_in() {
-        let resp = json!({
-            "code": 400,
-            "error": format!("{}", NotLoggedIn),
-        });
+    let mut resp = ApiResponse {
+        code: 200,
+        message: Some(String::from("success")),
+    };
+
+    let target = match query_user(&account, &database).await {
+        Some(u) => u,
+        None => {
+            resp.code = 404;
+            resp.message = Some("user not found".to_string());
+            return (StatusCode::OK, Json(resp)).into_response();
+        }
+    };
+    let allow = permission_check(current_user.get_user().await, &target);
+
+    if allow == false {
+        resp.code = 405;
+        resp.message = Some(String::from("permission deny"));
         return (StatusCode::OK, Json(resp)).into_response();
     }
 
     delete_user(current_user).await;
 
-    let resp = json!({
-        "code": 200,
-        "session_key": USER_COOKIE_NAME,
-        "session_value": "_",
-    });
     (StatusCode::OK, Json(resp)).into_response()
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/me",
+    responses(
+        (status = 200, description = "get detail user information", body = ResponseUser),
+        (status = 400, description = "not login, ", body = ApiResponse, example = json!(ApiResponse {
+            code: 400, 
+            message: Some(String::from("..."))
+        })),
+        (status = 404, description = "user not found, ", body = ApiResponse, example = json!(ApiResponse {
+            code: 404, 
+            message: Some(String::from("..."))
+        })),
+    ),
+)]
 pub(crate) async fn me_api(
     Extension(mut current_user): Extension<AuthState>,
     Extension(database): Extension<Database>,
 ) -> impl IntoResponse {
     if let Some(user) = current_user.get_user().await {
         if let Some(user) = query_user(&user.account, &database).await {
-            let resp = json!({
-                "code": 200,
-                "user": &user
-            });
+            let resp = ResponseUser {
+                code: 200,
+                user,
+            };
             (StatusCode::OK, Json(resp)).into_response()
         } else {
-            let resp = json!({
-                "code": 400,
-                "error": "user non-exist"
-            });
+            let resp = ApiResponse {
+                code: 404,
+                message: Some("user not found?".to_string()),
+            };
             (StatusCode::OK, Json(resp)).into_response()
         }
     } else {
-        let resp = json!({
-            "code": 400,
-            "error": format!("{}", &NotLoggedIn),
-        });
+        let resp = ApiResponse {
+            code: 400,
+            message: Some(format!("{}", &NotLoggedIn)),
+        };
         (StatusCode::OK, Json(resp)).into_response()
     }
 }
 
-pub(crate) async fn users_api(Extension(database): Extension<Database>) -> impl IntoResponse {
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ResponseUsers {
+    code: u16,
+    users: Option<Vec<UserInfo>>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/user",
+    responses(
+        (status = 200, description = "get user list", body = ResponseUsers)
+    )
+)]
+pub(crate) async fn users_api(
+    Extension(database): Extension<Database>
+) -> impl IntoResponse {
     //const QUERY: &str = "SELECT username FROM users LIMIT 100;";
     const QUERY: &str = "SELECT u.account, u.permission, u.username, u.worker_id, t.name title, d.name department, phone, u.email, u.create_at, u.login_at FROM users u INNER JOIN titles t ON t.id = u.title_id INNER JOIN departments d ON d.id = u.department_id";
 
@@ -314,15 +419,16 @@ pub(crate) async fn users_api(Extension(database): Extension<Database>) -> impl 
         .fetch_all(&database)
         .await
     {
-        let resp = json!({
-            "code": 200,
-            "users": &users
-        });
+        let resp = ResponseUsers {
+            code: 200,
+            users: Some(users),
+        };
         (StatusCode::OK, Json(resp)).into_response()
     } else {
-        let resp = json!({
-            "code": 401,
-        });
+        let resp = ResponseUsers {
+            code: 404,
+            users: None,
+        };
         (StatusCode::OK, Json(resp)).into_response()
     }
 }
@@ -336,7 +442,7 @@ pub(crate) async fn logout_response_api() -> impl IntoResponse {
     (StatusCode::OK, Json(resp)).into_response()
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, IntoParams, ToSchema)]
 pub struct UpdateMe {
     password: Option<String>,
     username: Option<String>,
@@ -344,23 +450,41 @@ pub struct UpdateMe {
     email: Option<String>,
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/v1/me",
+    request_body = UpdateMe,
+    responses(
+        (status = 200, description = "delete success", body = ApiResponse, example = json!(ApiResponse {
+            code: 200, 
+            message: Some(String::from("success")),
+        })),
+        (status = 405, description = "permission deny, ", body = ApiResponse, example = json!(ApiResponse {
+            code: 405, 
+            message: Some(String::from("..."))
+        })),
+        (status = 500, description = "server error, ", body = ApiResponse, example = json!(ApiResponse {
+            code: 500, 
+            message: Some(String::from("..."))
+        })),
+    )
+)]
 pub(crate) async fn update_myself_api(
     Extension(mut current_user): Extension<AuthState>,
     Extension(database): Extension<Database>,
     Json(user): Json<UpdateMe>,
 ) -> impl IntoResponse {
+    let mut resp = ApiResponse {
+        code: 200,
+        message: None,
+    };
     let account = if let Some(myself) = current_user.get_user().await {
         myself.account.clone()
     } else {
-        let resp = json!({
-            "code": 400,
-            "error": "myself don't exist",
-        });
+        resp.code = 405;
+        resp.message = Some("permission deny".to_string());
         return (StatusCode::OK, Json(resp)).into_response();
     };
-
-    let mut code = 200;
-    let mut error = String::from("none");
 
     match user.password {
         None => info!("passowrd no change"),
@@ -377,15 +501,14 @@ pub(crate) async fn update_myself_api(
                     Ok((id,)) => debug!("update passowrd ok {id}"),
                     Err(err) => {
                         error!("update password fail {err}");
-
-                        code = 400;
-                        error = format!("update password fail {err}");
+                        resp.code = 500;
+                        resp.message = Some(format!("update password fail {err}"));
                     }
                 }
             } else {
-                error = format!("password hashed fail");
-                code = 400;
-                error!("{error}");
+                resp.message = Some(format!("password hashed fail"));
+                resp.code = 500;
+                error!("{:?}", &resp);
             }
         }
     }
@@ -400,9 +523,9 @@ pub(crate) async fn update_myself_api(
         match return_one {
             Ok((id,)) => info!("update username ok {id}"),
             Err(err) => {
-                error = format!("update username fail {err}");
-                code = 400;
-                error!("{error}");
+                resp.message = Some(format!("update username fail {err}"));
+                resp.code = 500;
+                error!("{:?}", &resp);
             }
         }
     }
@@ -417,9 +540,9 @@ pub(crate) async fn update_myself_api(
         match return_one {
             Ok((id,)) => info!("update phone ok {id}"),
             Err(err) => {
-                error = format!("update phone fail {err}");
-                code = 400;
-                error!("{error}");
+                resp.message = Some(format!("update phone fail {err}"));
+                resp.code = 500;
+                error!("{:?}", &resp);
             }
         }
     }
@@ -434,21 +557,17 @@ pub(crate) async fn update_myself_api(
         match return_one {
             Ok((id,)) => info!("update email ok {id}"),
             Err(err) => {
-                error = format!("update email fail {err}");
-                code = 400;
-                error!("{error}");
+                resp.message = Some(format!("update email fail {err}"));
+                resp.code = 500;
+                error!("{:?}", &resp);
             }
         }
     }
 
-    let resp = json!({
-        "code": code,
-        "error": error,
-    });
     (StatusCode::OK, Json(resp)).into_response()
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, IntoParams, ToSchema)]
 pub struct UpdateUser {
     password: Option<String>,
     permission: Option<BitVec>,
@@ -501,27 +620,53 @@ impl From<&BitVec> for PermissionRole {
     }
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/v1/user/{account}",
+    params(
+        ("account" = String, Path, description = "user to update")
+    ),
+    request_body = UpdateUser,
+    responses(
+        (status = 200, description = "delete success", body = ApiResponse, example = json!(ApiResponse {
+            code: 200, 
+            message: Some(String::from("success")),
+        })),
+        (status = 404, description = "user not found, ", body = ApiResponse, example = json!(ApiResponse {
+            code: 404, 
+            message: Some(String::from("..."))
+        })),
+        (status = 405, description = "permission deny, ", body = ApiResponse, example = json!(ApiResponse {
+            code: 405, 
+            message: Some(String::from("..."))
+        })),
+        (status = 500, description = "server error, ", body = ApiResponse, example = json!(ApiResponse {
+            code: 500, 
+            message: Some(String::from("..."))
+        })),
+    )
+)]
 pub(crate) async fn update_user_api(
     Extension(mut current_user): Extension<AuthState>,
     Path(account): Path<String>,
     Extension(database): Extension<Database>,
     Json(user): Json<UpdateUser>,
 ) -> impl IntoResponse {
-    let mut code = 200;
-    let mut error = String::from("none");
+    let mut resp = ApiResponse {
+        code: 200,
+        message: Some(String::from("success")),
+    };
 
     let target = match query_user(&account, &database).await {
         Some(u) => u,
         None => {
-            let resp = json!({
-                "code": 401,
-                "error": "user not found",
-            });
+            resp.code = 404;
+            resp.message = Some("user not found".to_string());
             return (StatusCode::OK, Json(resp)).into_response();
         }
     };
 
-    let allow = if let Some(current) = current_user.get_user().await {
+    /*let allow = if let Some(current) = current_user.get_user().await {
         let current_role = PermissionRole::from(&current.permission);
         let target_role = PermissionRole::from(&target.permission);
 
@@ -560,13 +705,12 @@ pub(crate) async fn update_user_api(
     } else {
         error!("TODO, not login");
         false
-    };
+    };*/
+    let allow = permission_check(current_user.get_user().await, &target);
 
     if allow == false {
-        let resp = json!({
-            "code": 401,
-            "error": "permission deny",
-        });
+        resp.code = 405;
+        resp.message = Some(String::from("permission deny"));
         return (StatusCode::OK, Json(resp)).into_response();
     }
     
@@ -586,14 +730,14 @@ pub(crate) async fn update_user_api(
                     Err(err) => {
                         error!("update password fail {err}");
 
-                        code = 400;
-                        error = format!("update password fail {err}");
+                        resp.code = 500;
+                        resp.message = Some(format!("update password fail {err}"));
                     }
                 }
             } else {
-                error = format!("password hashed fail");
-                code = 400;
-                error!("{error}");
+                resp.message = Some(format!("password hashed wrong"));
+                resp.code = 400;
+                error!("{:?}", &resp);
             }
         }
     }
@@ -608,9 +752,9 @@ pub(crate) async fn update_user_api(
         match return_one {
             Ok((id,)) => info!("update permission ok {id}"),
             Err(err) => {
-                error = format!("update permission fail {err}");
-                code = 400;
-                error!("{error}");
+                resp.message = Some(format!("update permission fail {err}"));
+                resp.code = 500;
+                error!("{:?}", &resp);
             }
         }
     }
@@ -625,9 +769,9 @@ pub(crate) async fn update_user_api(
         match return_one {
             Ok((id,)) => info!("update username ok {id}"),
             Err(err) => {
-                error = format!("update username fail {err}");
-                code = 400;
-                error!("{error}");
+                resp.message = Some(format!("update username fail {err}"));
+                resp.code = 500;
+                error!("{:?}", &resp);
             }
         }
     }
@@ -642,9 +786,9 @@ pub(crate) async fn update_user_api(
         match return_one {
             Ok((id,)) => info!("update worker_id ok {id}"),
             Err(err) => {
-                error = format!("update worker_id fail {err}");
-                code = 400;
-                error!("{error}");
+                resp.message = Some(format!("update worker_id fail {err}"));
+                resp.code = 400;
+                error!("{:?}", &resp);
             }
         }
     }
@@ -662,13 +806,18 @@ pub(crate) async fn update_user_api(
                 match return_one {
                     Ok((id,)) => info!("update title ok {id}"),
                     Err(err) => {
-                        error = format!("update title fail {err}");
-                        code = 400;
-                        error!("{error}");
+                        resp.message = Some(format!("update title fail {err}"));
+                        resp.code = 500;
+                        error!("{:?}", &resp);
                     }
                 }
             }
-            Err(e) => error!("title-id fail - {e}"),
+            Err(e) => {
+                //error!("title-id fail - {e}")
+                resp.message = Some(format!("title-id fail {e}"));
+                resp.code = 500;
+                error!("{:?}", &resp);
+            },
         }
     }
 
@@ -685,16 +834,16 @@ pub(crate) async fn update_user_api(
                 match return_one {
                     Ok((id,)) => info!("update department ok {id}"),
                     Err(err) => {
-                        error = format!("update department fail {err}");
-                        code = 400;
-                        error!("{error}");
+                        resp.message = Some(format!("update department fail {err}"));
+                        resp.code = 500;
+                        error!("{:?}", &resp);
                     }
                 }
             }
             Err(e) => {
-                error = format!("department-id fail - {e}");
-                code = 400;
-                error!("{error}");
+                resp.message = Some(format!("department-id fail {e}"));
+                resp.code = 500;
+                error!("{:?}", &resp);
             }
         }
     }
@@ -709,9 +858,9 @@ pub(crate) async fn update_user_api(
         match return_one {
             Ok((id,)) => info!("update phone ok {id}"),
             Err(err) => {
-                error = format!("update phone fail {err}");
-                code = 400;
-                error!("{error}");
+                resp.message = Some(format!("update phone fail {err}"));
+                resp.code = 500;
+                error!("{:?}", &resp);
             }
         }
     }
@@ -726,18 +875,60 @@ pub(crate) async fn update_user_api(
         match return_one {
             Ok((id,)) => info!("update email ok {id}"),
             Err(err) => {
-                error = format!("update email fail {err}");
-                code = 400;
-                error!("{error}");
+                resp.message = Some(format!("update email fail {err}"));
+                resp.code = 500;
+                error!("{:?}", &resp);
             }
         }
     }
 
-    let resp = json!({
-        "code": code,
-        "error": error,
-    });
     (StatusCode::OK, Json(resp)).into_response()
+}
+
+fn permission_check(
+    current: Option<&CurrentUser>,
+    target: &UserInfo,
+) -> bool {
+    if let Some(current) = current {
+        let current_role = PermissionRole::from(&current.permission);
+        let target_role = PermissionRole::from(&target.permission);
+
+        info!("TODO, user-{}/{:?} is {:?} try to change {:?}",
+              current.account, current.permission,
+              current_role, target_role);
+
+        match (current_role, target_role) {
+            (PermissionRole::Admin(role), _) => {
+                info!("{role} change anything");
+                true
+            },
+            (PermissionRole::Gm(role), PermissionRole::Admin(_)) => {
+                error!("{role} can't change admin");
+                false
+            },
+            (PermissionRole::Gm(role), PermissionRole::Gm(_)) => {
+                if target.account != current.account {
+                    error!("{role} can't change other GM");
+                    false
+                } else {
+                    info!("{role} change herself");
+                    true
+                }
+            },
+            (PermissionRole::Gm(role), _) => {
+                info!("{role} change other");
+                true
+            },
+            (_, _) => {
+                error!("staff can't change each other");
+                false
+            }
+        }
+
+    } else {
+        error!("TODO, not login");
+        false
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
