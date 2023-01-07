@@ -321,7 +321,11 @@ pub struct ApiResponse {
             code: 405, 
             message: Some(String::from("..."))
         })),
-    )
+    ),
+    security(
+        //(), // <-- make optional authentication
+        ("user_token" = [])
+    ),
 )]
 pub(crate) async fn post_delete_api(
     Extension(mut current_user): Extension<AuthState>,
@@ -367,6 +371,10 @@ pub(crate) async fn post_delete_api(
             code: 404, 
             message: Some(String::from("..."))
         })),
+    ),
+    security(
+        //(), // <-- make optional authentication
+        ("user_token" = [])
     ),
 )]
 pub(crate) async fn me_api(
@@ -467,7 +475,11 @@ pub struct UpdateMe {
             code: 500, 
             message: Some(String::from("..."))
         })),
-    )
+    ),
+    security(
+        //(), // <-- make optional authentication
+        ("user_token" = [])
+    ),
 )]
 pub(crate) async fn update_myself_api(
     Extension(mut current_user): Extension<AuthState>,
@@ -644,7 +656,11 @@ impl From<&BitVec> for PermissionRole {
             code: 500, 
             message: Some(String::from("..."))
         })),
-    )
+    ),
+    security(
+        //(), // <-- make optional authentication
+        ("user_token" = [])
+    ),
 )]
 pub(crate) async fn update_user_api(
     Extension(mut current_user): Extension<AuthState>,

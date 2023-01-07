@@ -101,8 +101,8 @@ pub fn get_router(database: Database) -> Router {
         fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
             if let Some(components) = openapi.components.as_mut() {
                 components.add_security_scheme(
-                    "api_key",
-                    SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("todo_apikey"))),
+                    USER_COOKIE_NAME,
+                    SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("user_apikey"))),
                     )
             }
         }
@@ -191,6 +191,7 @@ async fn get_login(Extension(templates): Extension<Templates>) -> impl IntoRespo
     Html(templates.render("login", &Context::new()).unwrap())
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 struct CreateUser {
     username: String,
@@ -235,6 +236,7 @@ async fn post_signup(
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 struct User {
     username: String,
