@@ -11,7 +11,7 @@ use axum::{
 
 use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Utc};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, error, info};
@@ -73,6 +73,7 @@ async fn department_id_or_insert(database: &Database, name: &str) -> Result<i32>
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct UserInfo {
     account: String,
+    #[schema(example = json!({"storage": [1], "nbits": 8}))]
     permission: BitVec,
     username: Option<String>,
     worker_id: Option<String>,
@@ -80,8 +81,8 @@ pub struct UserInfo {
     department: String,
     phone: String,
     email: String,
-    create_at: DateTime<Local>,
-    login_at: Option<DateTime<Local>>,
+    create_at: DateTime<Utc>,
+    login_at: Option<DateTime<Utc>>,
 }
 
 async fn query_user(account: &str, database: &Database) -> Option<UserInfo> {
@@ -139,6 +140,7 @@ pub(crate) async fn user_api(
 pub struct UserNew {
     account: String,
     password: String,
+    #[schema(example = json!({"storage": [1], "nbits": 8}))]
     permission: BitVec,
     username: String,
     worker_id: String,
