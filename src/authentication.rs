@@ -290,3 +290,16 @@ pub(crate) async fn delete_user(auth_state: AuthState) {
         .await
         .unwrap();
 }
+
+pub(crate) async fn delete_user2(
+    database: &Database, user: &str
+) -> Result<()> {
+    const DELETE_QUERY: &str = "DELETE FROM users WHERE account = $1;";
+
+    sqlx::query(DELETE_QUERY)
+        .bind(user)
+        .execute(database)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow!("DB error - {e}"))
+}

@@ -18,7 +18,7 @@ use tracing::{debug, error, info};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::authentication::{
-    /*auth, */ delete_user, login, password_hashed, signup2, AuthState, CurrentUser,
+    /*auth, */ delete_user2, login, password_hashed, signup2, AuthState, CurrentUser,
 };
 use crate::errors::NotLoggedIn;
 //use crate::errors::{LoginError, NoUser, SignupError};
@@ -278,6 +278,8 @@ pub(crate) async fn post_login_api(
 ) -> impl IntoResponse {
     match login(&database, random, &user.account, &user.password).await {
         Ok(session_token) => {
+            let _ = update_login_at(&database, &user.account).await;
+
             let resp = ResponseUserLogin {
                 code: 200,
                 session_key: Some(USER_COOKIE_NAME.to_string()),
@@ -355,9 +357,14 @@ pub(crate) async fn post_delete_api(
         return (StatusCode::OK, Json(resp)).into_response();
     }
 
-    delete_user(current_user).await;
-
-    (StatusCode::OK, Json(resp)).into_response()
+    match delete_user2(&database, &account).await {
+        Ok(_) => (StatusCode::OK, Json(resp)).into_response(),
+        Err(e) => {
+            resp.code = 500;
+            resp.message = Some(format!("{e}"));
+            (StatusCode::OK, Json(resp)).into_response()
+        },
+    }
 }
 
 #[utoipa::path(
@@ -908,6 +915,11 @@ fn permission_check(current: Option<&CurrentUser>, target: &UserInfo) -> bool {
             current.account, current.permission, current_role, target_role
         );
 
+        if target.account == current.account {
+            debug!("{} modify myself is OK", current.account);
+            return true;
+        }
+
         match (current_role, target_role) {
             (PermissionRole::Admin(role), _) => {
                 info!("{role} change anything");
@@ -938,6 +950,29 @@ fn permission_check(current: Option<&CurrentUser>, target: &UserInfo) -> bool {
     } else {
         error!("TODO, not login");
         false
+    }
+}
+
+async fn update_login_at(
+    database: &Database,
+    account: &str,
+) -> Result<()> {
+    let fetch_one: Result<(i32,), _> = sqlx::query_as(
+        "UPDATE users SET login_at = $1 WHERE account = $2 RETURNING id;",
+        )
+        .bind(&Utc::now())
+        .bind(account)
+        .fetch_one(database)
+        .await;
+    match fetch_one {
+        Ok((id,)) => {
+            debug!("update users/login_at ok {id}");
+            Ok(())
+        },
+        Err(err) => {
+            error!("update users/login_at fail {err}");
+            Err(anyhow!("{err}"))
+        }
     }
 }
 
