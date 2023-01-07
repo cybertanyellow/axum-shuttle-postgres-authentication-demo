@@ -15,6 +15,7 @@ use chrono::{DateTime, Local};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, error, info};
+    use utoipa::{IntoParams, ToSchema};
 
 use crate::authentication::{/*auth, */ delete_user, login, password_hashed, signup2, AuthState,};
 use crate::errors::NotLoggedIn;
@@ -69,7 +70,7 @@ async fn department_id_or_insert(database: &Database, name: &str) -> Result<i32>
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct DbUser {
     account: String,
     permission: BitVec,
@@ -97,6 +98,19 @@ async fn query_user(account: &str, database: &Database) -> Option<DbUser> {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ResponseUser {
+    code: u16,
+    user: DbUser,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/user/:username",
+    responses(
+        (status = 200, description = "get detail user information", body = [ResponseUser])
+    )
+)]
 pub(crate) async fn user_api(
     Path(account): Path<String>,
     //Extension(_auth_state): Extension<AuthState>,
@@ -118,7 +132,7 @@ pub(crate) async fn user_api(
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct CreateUser {
     account: String,
     password: String,
@@ -131,6 +145,20 @@ pub struct CreateUser {
     email: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ResponseCreateUser {
+    code: u16,
+    session_key: String,
+    session_value: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/signup",
+    responses(
+        (status = 200, description = "return cookie/session key/value", body = [ResponseCreateUser])
+    )
+)]
 pub(crate) async fn post_signup_api(
     Extension(database): Extension<Database>,
     Extension(random): Extension<Random>,

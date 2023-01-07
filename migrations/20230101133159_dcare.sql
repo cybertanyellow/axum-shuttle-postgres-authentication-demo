@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS users (
     create_at timestamptz NOT NULL DEFAULT NOW(),   -- 創建時間
     login_at timestamptz             -- 登人時間(最後)
 );
+-- '{"account":"administrator","password":"fy90676855","username":"i-am-superuser","worker_id":"AA00001","title":"superuser","department":"backend","phone":"0900123456","email":"admin@fika.com","permission":{"storage":[1],"nbits":8}}'
 
 CREATE TABLE IF NOT EXISTS models (
     id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,

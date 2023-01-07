@@ -29,6 +29,12 @@ use serde::{Deserialize, Serialize};
 use shuttle_service::{error::CustomError, ShuttleAxum};
 use sqlx::Executor;
 use tera::{Context, Tera};
+use utoipa_swagger_ui::SwaggerUi;
+use utoipa::{
+    openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
+    Modify, OpenApi,
+};
+
 use utils::*;
 
 type Templates = Arc<Tera>;
@@ -62,16 +68,46 @@ pub fn get_router(database: Database) -> Router {
     let middleware_database = database.clone();
     let random = ChaCha8Rng::seed_from_u64(OsRng.next_u64());
 
+    #[derive(OpenApi)]
+    #[openapi(
+        paths(
+            dcare_user::user_api,
+            dcare_user::post_signup_api,
+        ),
+        components(
+            schemas(dcare_user::DbUser, dcare_user::CreateUser)
+        ),
+        modifiers(&SecurityAddon),
+        tags(
+            (name = "user", description = "User management API")
+            )
+     )]
+    struct ApiDoc;
+
+    struct SecurityAddon;
+
+    impl Modify for SecurityAddon {
+        fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+            if let Some(components) = openapi.components.as_mut() {
+                components.add_security_scheme(
+                    "api_key",
+                    SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("todo_apikey"))),
+                    )
+            }
+        }
+    }
+
     Router::new()
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
         .route("/", get(index))
-        .route("/signup", get(get_signup).post(post_signup))
+        /*.route("/signup", get(get_signup).post(post_signup))
         .route("/login", get(get_login).post(post_login))
         .route("/logout", post(logout_response))
         .route("/delete", post(post_delete))
         .route("/me", get(me))
         .route("/user/:username", get(user))
         .route("/users", get(users))
-        .route("/styles.css", any(styles))
+        .route("/styles.css", any(styles))*/
         .route("/api/v1/signup", post(post_signup_api))
         .route("/api/v1/login", post(post_login_api))
         .route("/api/v1/logout", post(logout_response_api))
