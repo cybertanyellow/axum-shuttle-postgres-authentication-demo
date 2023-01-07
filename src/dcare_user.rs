@@ -71,7 +71,7 @@ async fn department_id_or_insert(database: &Database, name: &str) -> Result<i32>
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
-pub struct DbUser {
+pub struct UserInfo {
     account: String,
     permission: BitVec,
     username: Option<String>,
@@ -84,10 +84,10 @@ pub struct DbUser {
     login_at: Option<DateTime<Local>>,
 }
 
-async fn query_user(account: &str, database: &Database) -> Option<DbUser> {
+async fn query_user(account: &str, database: &Database) -> Option<UserInfo> {
     const QUERY: &str = "SELECT u.account, u.permission, u.username, u.worker_id, t.name title, d.name department, phone, u.email, u.create_at, u.login_at FROM users u INNER JOIN titles t ON t.id = u.title_id INNER JOIN departments d ON d.id = u.department_id WHERE u.account = $1";
 
-    if let Ok(user) = sqlx::query_as::<_, DbUser>(QUERY)
+    if let Ok(user) = sqlx::query_as::<_, UserInfo>(QUERY)
         .bind(account)
         .fetch_optional(database)
         .await
@@ -101,7 +101,7 @@ async fn query_user(account: &str, database: &Database) -> Option<DbUser> {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ResponseUser {
     code: u16,
-    user: DbUser,
+    user: UserInfo,
 }
 
 #[utoipa::path(
@@ -132,7 +132,7 @@ pub(crate) async fn user_api(
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct CreateUser {
     account: String,
     password: String,
@@ -155,6 +155,9 @@ pub struct ResponseCreateUser {
 #[utoipa::path(
     post,
     path = "/api/v1/signup",
+    params(
+        CreateUser,
+    ),
     responses(
         (status = 200, description = "return cookie/session key/value", body = [ResponseCreateUser])
     )
@@ -307,7 +310,7 @@ pub(crate) async fn users_api(Extension(database): Extension<Database>) -> impl 
     //const QUERY: &str = "SELECT username FROM users LIMIT 100;";
     const QUERY: &str = "SELECT u.account, u.permission, u.username, u.worker_id, t.name title, d.name department, phone, u.email, u.create_at, u.login_at FROM users u INNER JOIN titles t ON t.id = u.title_id INNER JOIN departments d ON d.id = u.department_id";
 
-    if let Ok(users) = sqlx::query_as::<_, DbUser>(QUERY)
+    if let Ok(users) = sqlx::query_as::<_, UserInfo>(QUERY)
         .fetch_all(&database)
         .await
     {

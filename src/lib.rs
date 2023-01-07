@@ -75,7 +75,9 @@ pub fn get_router(database: Database) -> Router {
             dcare_user::post_signup_api,
         ),
         components(
-            schemas(dcare_user::DbUser, dcare_user::CreateUser)
+            schemas(dcare_user::UserInfo, dcare_user::ResponseUser,
+                    dcare_user::CreateUser, dcare_user::ResponseCreateUser,
+                    )
         ),
         modifiers(&SecurityAddon),
         tags(
