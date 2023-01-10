@@ -117,18 +117,9 @@ pub fn get_router(database: Database) -> Router {
     Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
         .route("/", get(index))
-        /*.route("/signup", get(get_signup).post(post_signup))
-        .route("/login", get(get_login).post(post_login))
-        .route("/logout", post(logout_response))
-        .route("/delete", post(post_delete))
-        .route("/me", get(me))
-        .route("/user/:username", get(user))
-        .route("/users", get(users))*/
         .route("/styles.css", any(styles))
-        //.route("/api/v1/signup", post(post_signup_api))
         .route("/api/v1/login", post(post_login_api))
-        .route("/api/v1/logout", post(logout_response_api))
-        //.route("/api/v1/delete/:account", post(post_delete_api))
+        .route("/api/v1/logout", get(logout_response_api))
         .route("/api/v1/me", get(me_api).put(update_myself_api))
         .route(
             "/api/v1/user/:account",
@@ -158,133 +149,6 @@ async fn index(
     Html(templates.render("index", &context).unwrap())
 }
 
-#[allow(dead_code)]
-async fn user(
-    Path(username): Path<String>,
-    Extension(mut auth_state): Extension<AuthState>,
-    Extension(database): Extension<Database>,
-    Extension(templates): Extension<Templates>,
-) -> impl IntoResponse {
-    const QUERY: &str = "SELECT username FROM users WHERE username = $1;";
-
-    let user: Option<(String,)> = sqlx::query_as(QUERY)
-        .bind(&username)
-        .fetch_optional(&database)
-        .await
-        .unwrap();
-
-    if let Some((username,)) = user {
-        let user_is_self = auth_state
-            .get_user()
-            .await
-            .map(|logged_in_user| logged_in_user.account == username)
-            .unwrap_or_default();
-        let mut context = Context::new();
-        context.insert("username", &username);
-        context.insert("is_self", &user_is_self);
-        Ok(Html(templates.render("user", &context).unwrap()))
-    } else {
-        Err(error_page(&NoUser(username)))
-    }
-}
-
-#[allow(dead_code)]
-async fn get_signup(Extension(templates): Extension<Templates>) -> impl IntoResponse {
-    Html(templates.render("signup", &Context::new()).unwrap())
-}
-
-#[allow(dead_code)]
-async fn get_login(Extension(templates): Extension<Templates>) -> impl IntoResponse {
-    Html(templates.render("login", &Context::new()).unwrap())
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Serialize, Deserialize)]
-struct CreateUser {
-    username: String,
-    password: String,
-    confirm_password: String,
-}
-
-#[allow(dead_code)]
-async fn post_signup(
-    Extension(database): Extension<Database>,
-    Extension(random): Extension<Random>,
-    //multipart: Multipart,
-    Json(user): Json<CreateUser>,
-) -> impl IntoResponse {
-    /*let data = parse_multipart(multipart)
-        .await
-        .map_err(|err| error_page(&err))?;
-
-    if let (Some(username), Some(password), Some(confirm_password)) = (
-        data.get("username"),
-        data.get("password"),
-        data.get("confirm_password"),
-    ) {
-        if password != confirm_password {
-            return Err(error_page(&SignupError::PasswordsDoNotMatch));
-        }
-
-        match signup(&database, random, username, password).await {
-            Ok(session_token) => Ok(login_response(session_token)),
-            Err(error) => Err(error_page(&error)),
-        }
-    } else {
-        Err(error_page(&SignupError::MissingDetails))
-    }*/
-    if user.password != user.confirm_password {
-        return Err(error_page(&SignupError::PasswordsDoNotMatch));
-    }
-
-    match signup(&database, random, &user.username, &user.password).await {
-        Ok(session_token) => Ok(login_response(session_token)),
-        Err(error) => Err(error_page(&error)),
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Serialize, Deserialize)]
-struct User {
-    username: String,
-    password: String,
-}
-
-#[allow(dead_code)]
-async fn post_login(
-    Extension(database): Extension<Database>,
-    Extension(random): Extension<Random>,
-    Json(user): Json<User>,
-) -> impl IntoResponse {
-    /*let data = parse_multipart(multipart)
-        .await
-        .map_err(|err| error_page(&err))?;
-
-    if let (Some(username), Some(password)) = (data.get("username"), data.get("password")) {
-        match login(&database, random, username, password).await {
-            Ok(session_token) => Ok(login_response(session_token)),
-            Err(err) => Err(error_page(&err)),
-        }
-    } else {
-        Err(error_page(&LoginError::MissingDetails))
-    }*/
-    match login(&database, random, &user.username, &user.password).await {
-        Ok(session_token) => Ok(login_response(session_token)),
-        Err(err) => Err(error_page(&err)),
-    }
-}
-
-#[allow(dead_code)]
-async fn post_delete(Extension(current_user): Extension<AuthState>) -> impl IntoResponse {
-    if !current_user.logged_in() {
-        return Err(error_page(&NotLoggedIn));
-    }
-
-    delete_user(current_user).await;
-
-    Ok(logout_response().await)
-}
-
 async fn styles() -> impl IntoResponse {
     Response::builder()
         .status(http::StatusCode::OK)
@@ -302,22 +166,4 @@ async fn me(
     } else {
         Err(error_page(&NotLoggedIn))
     }
-}
-
-#[allow(dead_code)]
-async fn users(
-    Extension(database): Extension<Database>,
-    Extension(templates): Extension<Templates>,
-) -> impl IntoResponse {
-    const QUERY: &str = "SELECT username FROM users LIMIT 100;";
-
-    let users: Vec<(String,)> = sqlx::query_as(QUERY).fetch_all(&database).await.unwrap();
-
-    // This should be a no op right :)
-    let users = users.into_iter().map(|(value,)| value).collect::<Vec<_>>();
-
-    let mut context = Context::new();
-    context.insert("users", &users);
-
-    Html(templates.render("users", &context).unwrap())
 }

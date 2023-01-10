@@ -9,7 +9,8 @@ use axum::{
     //response::{Html, Redirect},
     Json,
 };
-//use http::Response;
+use http::Response;
+use http_body::Full;
 
 use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
@@ -20,7 +21,7 @@ use tracing::{debug, error, info};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::authentication::{
-    /*auth, */ delete_user2, login, password_hashed, signup2, AuthState, CurrentUser,
+    /*auth, */ delete_user2, login, password_hashed, signup2, AuthState, CurrentUser, SessionToken,
 };
 use crate::errors::NotLoggedIn;
 //use crate::errors::{LoginError, NoUser, SignupError};
@@ -290,12 +291,35 @@ pub(crate) async fn post_login_api(
         Ok((session_token, permission)) => {
             let _ = update_login_at(&database, &user.account).await;
 
-            let resp = ResponseUserLogin::new(200, Some(USER_COOKIE_NAME.to_string()), Some(session_token.into_cookie_value()), None, Some(permission));
-            (StatusCode::OK, Json(resp)).into_response()
+            let token = session_token.into_cookie_value();
+            /*let resp = ResponseUserLogin::new(200, Some(USER_COOKIE_NAME.to_string()), Some(token.clone()), None, Some(permission));
+            (StatusCode::OK, Json(resp)).into_response()*/
+            let resp = json!({
+                "code": 200,
+                "session_key": USER_COOKIE_NAME,
+                "session_value": &token,
+                "permission": permission,
+            });
+            let cookie = format!("{}={}; Max-Age=COOKIE_MAX_AGE",
+                                 USER_COOKIE_NAME,
+                                 token);
+            Response::builder()
+                .status(http::StatusCode::OK)
+                .header("Location", "/")
+                .header("content-type", "application/json")
+                .header("Set-Cookie", cookie)
+                .body(resp.to_string())
+                .unwrap()
         }
         Err(error) => {
-            let resp = ResponseUserLogin::new(404, None, None, Some(format!("{}", error)), None);
-            (StatusCode::NOT_FOUND, Json(resp)).into_response()
+            /*let resp = ResponseUserLogin::new(404, None, None, Some(format!("{}", error)), None);
+            (StatusCode::NOT_FOUND, Json(resp)).into_response()*/
+            Response::builder()
+                .status(http::StatusCode::OK)
+                .header("Location", "/")
+                .header("content-type", "application/json")
+                .body(format!("{{\"code\": 404, \"message\": \"{error}\"}}"))
+                .unwrap()
         }
     }
 }
@@ -454,13 +478,33 @@ pub(crate) async fn users_api(Extension(database): Extension<Database>) -> impl 
     }
 }
 
-pub(crate) async fn logout_response_api() -> impl IntoResponse {
+#[utoipa::path(
+    get,
+    path = "/api/v1/logout",
+    responses(
+        (status = 200, description = "logout success", body = ResponseUserLogin),
+    ),
+    security(
+        //(), // <-- make optional authentication
+        ("logined cookie/session-id" = [])
+    ),
+)]
+pub(crate) async fn logout_response_api(
+    Extension(_current_user): Extension<AuthState>,
+) -> impl IntoResponse {
     let resp = json!({
         "code": 200,
         "session_key": USER_COOKIE_NAME,
         "session_value": "_",
     });
-    (StatusCode::OK, Json(resp)).into_response()
+    //(StatusCode::OK, Json(resp)).into_response()
+    Response::builder()
+        .status(http::StatusCode::OK)
+        .header("Location", "/")
+        .header("content-type", "application/json")
+        .header("Set-Cookie", format!("{}=_; Max-Age=0", USER_COOKIE_NAME,))
+        .body(resp.to_string())
+        .unwrap()
 }
 
 #[derive(Debug, Serialize, Deserialize, IntoParams, ToSchema)]

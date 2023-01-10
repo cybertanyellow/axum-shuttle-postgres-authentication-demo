@@ -201,10 +201,10 @@ pub(crate) async fn signup2(
     email: &str,
 ) -> Result<SessionToken, SignupError> {
     fn valid_username(account: &str) -> bool {
-        (1..20).contains(&account.len())
+        (1..128).contains(&account.len())
             && account
                 .chars()
-                .all(|c| matches!(c, 'a'..='z' | '0'..='9' | '-'))
+                .all(|c| c.is_ascii_graphic())
     }
 
     if !valid_username(account) {
