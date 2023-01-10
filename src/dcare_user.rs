@@ -1,5 +1,7 @@
 //use std::sync::{Arc, Mutex};
 
+use std::{os::unix::prelude::PermissionsExt, fs::Permissions};
+
 use axum::{
     extract::{Extension, Path},
     http::StatusCode,
@@ -250,6 +252,22 @@ pub struct ResponseUserLogin {
     session_key: Option<String>,
     session_value: Option<String>,
     message: Option<String>,
+    permission: Option<BitVec>,
+}
+
+impl  ResponseUserLogin {
+    fn new(code: u16,
+           skey: Option<String>, sval: Option<String>,
+           msg: Option<String>, permission: Option<BitVec>,
+           ) -> Self {
+        Self {
+            code,
+            session_key: skey,
+            session_value: sval,
+            message: msg,
+            permission,
+        }
+    }
 }
 
 #[utoipa::path(
@@ -257,18 +275,10 @@ pub struct ResponseUserLogin {
     path = "/api/v1/login",
     request_body = UserLogin,
     responses(
-        (status = 200, description = "login success, return cookie session key/value", body = ResponseUserLogin, example = json!(ResponseUserLogin {
-            code: 200,
-            session_key: Some(String::from("cookie key")),
-            session_value: Some(String::from("cookie value")),
-            message: Some(String::from("...")),
-        })),
-        (status = 404, description = "user not found, ", body = ResponseUserLogin, example = json!(ResponseUserLogin {
-            code: 404,
-            session_key: None,
-            session_value: None,
-            message: Some(String::from("..."))
-        })),
+        (status = 200, description = "login success, return cookie session key/value", body = ResponseUserLogin,
+             example = json!(ResponseUserLogin::new(200, Some(String::from("cookie key")), Some(String::from("cookie value")), Some(String::from("...")), None))),
+        (status = 404, description = "user not found, ", body = ResponseUserLogin,
+            example = json!(ResponseUserLogin::new(404, None, None, Some(String::from("...")), None))),
     )
 )]
 pub(crate) async fn post_login_api(
@@ -277,24 +287,14 @@ pub(crate) async fn post_login_api(
     Json(user): Json<UserLogin>,
 ) -> impl IntoResponse {
     match login(&database, random, &user.account, &user.password).await {
-        Ok(session_token) => {
+        Ok((session_token, permission)) => {
             let _ = update_login_at(&database, &user.account).await;
 
-            let resp = ResponseUserLogin {
-                code: 200,
-                session_key: Some(USER_COOKIE_NAME.to_string()),
-                session_value: Some(session_token.into_cookie_value()),
-                message: None,
-            };
+            let resp = ResponseUserLogin::new(200, Some(USER_COOKIE_NAME.to_string()), Some(session_token.into_cookie_value()), None, Some(permission));
             (StatusCode::OK, Json(resp)).into_response()
         }
         Err(error) => {
-            let resp = ResponseUserLogin {
-                code: 404,
-                session_key: None,
-                session_value: None,
-                message: Some(format!("{}", error)),
-            };
+            let resp = ResponseUserLogin::new(404, None, None, Some(format!("{}", error)), None);
             (StatusCode::NOT_FOUND, Json(resp)).into_response()
         }
     }

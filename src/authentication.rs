@@ -253,16 +253,16 @@ pub(crate) async fn login(
     random: Random,
     account: &str,
     password: &str,
-) -> Result<SessionToken, LoginError> {
-    const LOGIN_QUERY: &str = "SELECT id, password FROM users WHERE users.account = $1;";
+) -> Result<(SessionToken, BitVec), LoginError> {
+    const LOGIN_QUERY: &str = "SELECT id, password, permission FROM users WHERE users.account = $1;";
 
-    let row: Option<(i32, String)> = sqlx::query_as(LOGIN_QUERY)
+    let row: Option<(i32, String, BitVec)> = sqlx::query_as(LOGIN_QUERY)
         .bind(account)
         .fetch_optional(database)
         .await
         .unwrap();
 
-    let (user_id, hashed_password) = if let Some(row) = row {
+    let (user_id, hashed_password, permission) = if let Some(row) = row {
         row
     } else {
         return Err(LoginError::UserDoesNotExist);
@@ -274,7 +274,7 @@ pub(crate) async fn login(
         return Err(LoginError::WrongPassword);
     }
 
-    Ok(new_session(database, random, user_id).await)
+    Ok((new_session(database, random, user_id).await, permission))
 }
 
 pub(crate) async fn delete_user(auth_state: AuthState) {
