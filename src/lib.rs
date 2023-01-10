@@ -2,6 +2,7 @@ mod authentication;
 mod dcare_user;
 mod errors;
 mod utils;
+mod dcare_order;
 
 use std::sync::{Arc, Mutex};
 
@@ -36,6 +37,11 @@ use utoipa::{
 use utoipa_swagger_ui::SwaggerUi;
 
 use utils::*;
+
+use dcare_order::{
+    order_create, order_list_request,
+    order_request, order_update, order_delete,
+};
 
 type Templates = Arc<Tera>;
 type Database = sqlx::PgPool;
@@ -129,6 +135,11 @@ pub fn get_router(database: Database) -> Router {
             get(user_api).put(update_user_api).delete(post_delete_api),
         )
         .route("/api/v1/user", get(users_api).post(post_signup_api))
+        .route(
+            "/api/v1/order/:id",
+            get(order_request).put(order_update).delete(order_delete),
+        )
+        .route("/api/v1/order", get(order_list_request).post(order_create))
         .layer(middleware::from_fn(move |req, next| {
             auth(req, next, middleware_database.clone())
         }))

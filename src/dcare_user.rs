@@ -306,6 +306,15 @@ pub struct ApiResponse {
     message: Option<String>,
 }
 
+impl ApiResponse {
+    pub fn new(code: u16, message: Option<String>) -> Self {
+        Self {
+            code,
+            message,
+        }
+    }
+}
+
 #[utoipa::path(
     delete,
     path = "/api/v1/user/{account}",
