@@ -109,14 +109,14 @@ pub struct OrderResponse {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct OrdersResponse {
     code: u16,
-    order: Option<Vec<OrderInfo>>,
+    orders: Option<Vec<OrderInfo>>,
 }
 
 #[utoipa::path(
     get,
     path = "/api/v1/order/{id}",
     params(
-        ("id" = u32, Path, description = "order ID")
+        ("id" = i64, Path, description = "order ID")
     ),
     responses(
         (status = 200, description = "get detail order information", body = OrderResponse)
@@ -124,13 +124,26 @@ pub struct OrdersResponse {
 )]
 pub(crate) async fn order_request(
     Extension(_auth_state): Extension<AuthState>,
-    Extension(_database): Extension<Database>,
-    Path(_id): Path<u32>,
+    Extension(database): Extension<Database>,
+    Path(id): Path<i64>,
 ) -> impl IntoResponse {
-    let resp = OrderResponse {
+    let mut resp = OrderResponse {
         code: 400,
         order: None,
     };
+
+    const QUERY: &str = "SELECT o.id, o.issue_at, d.name department, o.customer_name, o.customer_phone, o.customer_address, m.brand, m.model, o.purchase_at, o.accessory_other, o.appearance, o.appearance_other, o.service, o.fault_other, o.photo_url, o.remark, o.cost, o.prepaid_free, s.flow status FROM orders o INNER JOIN models m ON m.id = o.model_id INNER JOIN departments d ON d.id = o.department_id INNER JOIN models m ON m.id = o.model_id INNER JOIN status s ON s.id = o.status_id WHERE o.id = $1";
+
+    /* TODO map users/accessories/faults table */
+
+    if let Ok(user) = sqlx::query_as::<_, OrderInfo>(QUERY)
+        .bind(id)
+        .fetch_optional(&database)
+        .await
+    {
+        resp.order = user;
+        resp.code = 200;
+    }
     (StatusCode::OK, Json(resp)).into_response()
 }
 
@@ -138,7 +151,7 @@ pub(crate) async fn order_request(
     put,
     path = "/api/v1/order/{id}",
     params(
-        ("id" = u32, Path, description = "order ID")
+        ("id" = i64, Path, description = "order ID")
     ),
     request_body = OrderUpdate,
     responses(
@@ -154,7 +167,7 @@ pub(crate) async fn order_request(
 )]
 pub(crate) async fn order_update(
     Extension(/*mut */_current_user): Extension<AuthState>,
-    Path(_id): Path<u32>,
+    Path(_id): Path<i64>,
     Extension(_database): Extension<Database>,
     Json(_order): Json<OrderUpdate>,
 ) -> impl IntoResponse {
@@ -166,7 +179,7 @@ pub(crate) async fn order_update(
     delete,
     path = "/api/v1/order/{id}",
     params(
-        ("id" = u32, Path, description = "order ID to delete")
+        ("id" = i64, Path, description = "order ID to delete")
     ),
     responses(
         (status = 200, description = "delete success", body = ApiResponse, example = json!(ApiResponse::new(200, Some(String::from("success"))))),
@@ -181,7 +194,7 @@ pub(crate) async fn order_update(
 pub(crate) async fn order_delete(
     Extension(mut _current_user): Extension<AuthState>,
     Extension(_database): Extension<Database>,
-    Path(_id): Path<u32>,
+    Path(_id): Path<i64>,
 ) -> impl IntoResponse {
     let resp = ApiResponse::new(400, Some(String::from("TODO")));
     (StatusCode::OK, Json(resp)).into_response()
@@ -195,12 +208,23 @@ pub(crate) async fn order_delete(
     )
 )]
 pub(crate) async fn order_list_request(
-    Extension(_database): Extension<Database>
+    Extension(database): Extension<Database>
 ) -> impl IntoResponse {
-    let resp = OrdersResponse {
+    let mut resp = OrdersResponse {
         code: 400,
-        order: None,
+        orders: None,
     };
+    const QUERY: &str = "SELECT o.id, o.issue_at, d.name department, o.customer_name, o.customer_phone, o.customer_address, m.brand, m.model, o.purchase_at, o.accessory_other, o.appearance, o.appearance_other, o.service, o.fault_other, o.photo_url, o.remark, o.cost, o.prepaid_free, s.flow status FROM orders o INNER JOIN models m ON m.id = o.model_id INNER JOIN departments d ON d.id = o.department_id INNER JOIN models m ON m.id = o.model_id INNER JOIN status s ON s.id = o.status_id";
+
+    /* TODO map users/accessories/faults table */
+
+    if let Ok(user) = sqlx::query_as::<_, OrderInfo>(QUERY)
+        .fetch_all(&database)
+        .await
+    {
+        resp.orders = Some(user);
+        resp.code = 200;
+    }
     (StatusCode::OK, Json(resp)).into_response()
 }
 
