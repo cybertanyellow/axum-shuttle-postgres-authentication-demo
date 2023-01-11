@@ -104,6 +104,36 @@ pub(crate) async fn query_user(account: &str, database: &Database) -> Option<Use
     }
 }
 
+pub(crate) async fn query_user_id(
+    database: &Database,
+    account: &str,
+) -> Option<i32> {
+    const QUERY: &str = "SELECT id FROM users WHERE account = $1;";
+
+    match sqlx::query_as(QUERY)
+        .bind(account)
+        .fetch_optional(database)
+        .await {
+            Ok(Some((id,))) => {
+                Some(id)
+            },
+            _ => {
+                None
+            },
+        }
+
+    /*let user: Result<Option<(i32,)>> = sqlx::query_as(QUERY)
+    if let Ok(u) = user {
+        if let Some((id,)) = u {
+            Some(id)
+        } else {
+            None
+        }
+    } else {
+        None
+    }*/
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ResponseUser {
     code: u16,

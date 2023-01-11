@@ -19,11 +19,12 @@ use crate::authentication::{
 };
 use crate::{Database, Random};
 use crate::dcare_user::{
-    ApiResponse, query_user,
+    ApiResponse, query_user, query_user_id,
     department_id_or_insert,
 };
 
 type Price = i32;
+//struct Price(i32);
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct OrderInfo {
@@ -225,12 +226,16 @@ pub(crate) async fn order_create(
         return (StatusCode::OK, Json(resp)).into_response();
     }
 
-    let contact_id = match query_user(&order.contact, &database).await {
-        Some(user) => user.id,
-        None => {
-            resp.update(400, Some("contact staff not found".to_string()));
-            return (StatusCode::OK, Json(resp)).into_response();
+    let contact_id = if let Some(ref contact) = order.contact {
+        match query_user_id(&database, contact).await {
+            Some(id) => id,
+            None => {
+                resp.update(400, Some("contact staff not found".to_string()));
+                return (StatusCode::OK, Json(resp)).into_response();
+            }
         }
+    } else {
+        0 /* super user? */
     };
 
     let department_id = match order.department {
@@ -250,7 +255,7 @@ pub(crate) async fn order_create(
         Some(ref m) => m,
         None => "unknown",
     };
-    let model_id = match model_id_or_insert(&database, brand, model).await {
+    let model_id = match model_id_or_insert(&database, brand, model, None).await {
         Ok(id) => id,
         Err(e) => {
             resp.update(500, Some(format!("{e}")));
@@ -263,7 +268,7 @@ pub(crate) async fn order_create(
         Some(ref a) => a,
         None => "none",
     };
-    let accessory_id1 = match accessory_id_or_insert(&database, item, Price(0)).await {
+    let accessory_id1 = match accessory_id_or_insert(&database, item, 0).await {
         Ok(id) => id,
         Err(e) => {
             resp.update(500, Some(format!("{e}")));
@@ -276,7 +281,7 @@ pub(crate) async fn order_create(
         Some(ref a) => a,
         None => "none",
     };
-    let accessory_id2 = match accessory_id_or_insert(&database, item, Price(0)).await {
+    let accessory_id2 = match accessory_id_or_insert(&database, item, 0).await {
         Ok(id) => id,
         Err(e) => {
             resp.update(500, Some(format!("{e}")));
@@ -289,7 +294,7 @@ pub(crate) async fn order_create(
         Some(ref f) => f,
         None => "none",
     };
-    let fault_id1 = match fault_id_or_insert(&database, item, Price(0)).await {
+    let fault_id1 = match fault_id_or_insert(&database, item, 0).await {
         Ok(id) => id,
         Err(e) => {
             resp.update(500, Some(format!("{e}")));
@@ -302,7 +307,7 @@ pub(crate) async fn order_create(
         Some(ref f) => f,
         None => "none",
     };
-    let fault_id2 = match fault_id_or_insert(&database, item, Price(0)).await {
+    let fault_id2 = match fault_id_or_insert(&database, item, 0).await {
         Ok(id) => id,
         Err(e) => {
             resp.update(500, Some(format!("{e}")));
@@ -311,11 +316,7 @@ pub(crate) async fn order_create(
         }
     };
 
-    let flow = match order.sttus {
-        Some(ref f) => f,
-        None => "none",
-    };
-    let status_id = match status_id_or_insert(&database, flow).await {
+    let status_id = match status_id_or_insert(&database, &order.status).await {
         Ok(id) => id,
         Err(e) => {
             resp.update(500, Some(format!("{e}")));
@@ -325,28 +326,32 @@ pub(crate) async fn order_create(
     };
 
     let servicer_id = if let Some(ref servicer) = order.servicer{
-        match query_user(servicer, &database).await {
-            Some(user) => user.id,
+        match query_user_id(&database, servicer).await {
+            Some(id) => Some(id),
             None => {
                 resp.update(400, Some("servicer staff not found".to_string()));
                 return (StatusCode::OK, Json(resp)).into_response();
             }
         }
+    } else {
+        None
     };
 
     let maintainer_id = if let Some(ref maintainer) = order.maintainer {
-        match query_user(maintainer, &database).await {
-            Some(user) => user.id,
+        match query_user_id(&database, maintainer).await {
+            Some(id) => Some(id),
             None => {
                 resp.update(400, Some("servicer staff not found".to_string()));
                 return (StatusCode::OK, Json(resp)).into_response();
             }
         }
+    } else {
+        None
     };
 
     const INSERT_QUERY: &str =
         "INSERT INTO orders (number, department_id, contact_id, customer_name, customer_phone, customer_address, model_id, purchase_at, accessory_id1, accessory_id2, accessory_other, appearance, appearance_other, service, fault_id1, fault_id2, fault_other, photo_url, remark, cost, prepaid_free, status_id, servicer_id, maintainer_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING id;";
-    let fetch_one = sqlx::query_as(INSERT_QUERY)
+    let fetch_one: Result<(i32,), _> = sqlx::query_as(INSERT_QUERY)
         .bind(&order.number)
         .bind(department_id)
         .bind(contact_id)
@@ -371,7 +376,7 @@ pub(crate) async fn order_create(
         .bind(status_id)
         .bind(servicer_id)
         .bind(maintainer_id)
-        .fetch_one(database)
+        .fetch_one(&database)
         .await;
 
     match fetch_one {
