@@ -7,26 +7,29 @@ mod dcare_order;
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    extract::{Extension, Path},
+    extract::{Extension/*, Path*/},
     //extract::Multipart,
     middleware,
     response::{Html, IntoResponse, Redirect},
     routing::{any, get, post},
-    Json,
+    //Json,
     Router,
 };
 use http::Response;
 
-use authentication::{auth, delete_user, login, signup, AuthState};
+use authentication::{
+    //delete_user, login, signup,
+    auth, AuthState,
+};
 use dcare_user::{
     logout_response_api, me_api, post_delete_api, post_login_api, post_signup_api,
     update_myself_api, update_user_api, user_api, users_api,
 };
-use errors::{/*LoginError, */ NoUser, NotLoggedIn, SignupError};
+use errors::{/*LoginError, NoUser, SignupError, */NotLoggedIn};
 use pbkdf2::password_hash::rand_core::OsRng;
 use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
-use serde::{Deserialize, Serialize};
+//use serde::{Deserialize, Serialize};
 use shuttle_service::{error::CustomError, ShuttleAxum};
 use sqlx::Executor;
 use tera::{Context, Tera};

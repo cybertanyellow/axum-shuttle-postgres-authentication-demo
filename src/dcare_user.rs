@@ -1,6 +1,6 @@
 //use std::sync::{Arc, Mutex};
 
-use std::{os::unix::prelude::PermissionsExt, fs::Permissions};
+//use std::{os::unix::prelude::PermissionsExt, fs::Permissions};
 
 use axum::{
     extract::{Extension, Path},
@@ -10,7 +10,7 @@ use axum::{
     Json,
 };
 use http::Response;
-use http_body::Full;
+//use http_body::Full;
 
 use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
@@ -21,11 +21,12 @@ use tracing::{debug, error, info};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::authentication::{
-    /*auth, */ delete_user2, login, password_hashed, signup2, AuthState, CurrentUser, SessionToken,
+    /*auth, SessionToken,*/
+    delete_user2, login, password_hashed, signup2, AuthState, CurrentUser,
 };
 use crate::errors::NotLoggedIn;
 //use crate::errors::{LoginError, NoUser, SignupError};
-use crate::{Database, Random, /*COOKIE_MAX_AGE, */ USER_COOKIE_NAME};
+use crate::{Database, Random, COOKIE_MAX_AGE, USER_COOKIE_NAME};
 
 async fn title_id_or_insert(database: &Database, name: &str) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM titles WHERE name = $1;";
@@ -330,9 +331,9 @@ pub(crate) async fn post_login_api(
                 "session_value": &token,
                 "permission": permission,
             });
-            let cookie = format!("{}={}; Max-Age=COOKIE_MAX_AGE",
-                                 USER_COOKIE_NAME,
-                                 token);
+
+            let cookie = format!("{USER_COOKIE_NAME}={token}; Max-Age={COOKIE_MAX_AGE}");
+
             Response::builder()
                 .status(http::StatusCode::OK)
                 .header("Location", "/")

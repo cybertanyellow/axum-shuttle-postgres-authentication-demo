@@ -10,16 +10,20 @@ use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
 use chrono::{DateTime, Utc, NaiveDate};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
-use serde_json::json;
-use tracing::{debug, error, info};
+//use serde_json::json;
+use tracing::{
+    //debug, info,
+    error,
+};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::authentication::{
-    AuthState, CurrentUser,
+    //CurrentUser,
+    AuthState,
 };
 use crate::{Database, Random};
 use crate::dcare_user::{
-    ApiResponse, query_user, query_user_id,
+    ApiResponse, query_user_id,
     department_id_or_insert,
 };
 
@@ -64,7 +68,7 @@ pub struct OrderInfo {
 pub struct OrderUpdate {
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct OrderNew {
     number: String,
 
@@ -122,7 +126,7 @@ pub struct OrdersResponse {
 pub(crate) async fn order_request(
     Extension(_auth_state): Extension<AuthState>,
     Extension(_database): Extension<Database>,
-    Path(id): Path<u32>,
+    Path(_id): Path<u32>,
 ) -> impl IntoResponse {
     let resp = OrderResponse {
         code: 400,
@@ -150,12 +154,12 @@ pub(crate) async fn order_request(
     ),
 )]
 pub(crate) async fn order_update(
-    Extension(mut current_user): Extension<AuthState>,
-    Path(id): Path<u32>,
-    Extension(database): Extension<Database>,
-    Json(order): Json<OrderUpdate>,
+    Extension(/*mut */_current_user): Extension<AuthState>,
+    Path(_id): Path<u32>,
+    Extension(_database): Extension<Database>,
+    Json(_order): Json<OrderUpdate>,
 ) -> impl IntoResponse {
-    let mut resp = ApiResponse::new(400, Some(String::from("TODO")));
+    let resp = ApiResponse::new(400, Some(String::from("TODO")));
     (StatusCode::OK, Json(resp)).into_response()
 }
 
@@ -180,7 +184,7 @@ pub(crate) async fn order_delete(
     Extension(_database): Extension<Database>,
     Path(_id): Path<u32>,
 ) -> impl IntoResponse {
-    let mut resp = ApiResponse::new(400, Some(String::from("TODO")));
+    let resp = ApiResponse::new(400, Some(String::from("TODO")));
     (StatusCode::OK, Json(resp)).into_response()
 }
 

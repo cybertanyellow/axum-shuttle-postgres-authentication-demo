@@ -122,6 +122,7 @@ pub(crate) async fn auth<B>(
     next.run(req).await
 }
 
+#[allow(dead_code)]
 pub(crate) async fn signup(
     database: &Database,
     random: Random,
@@ -277,6 +278,7 @@ pub(crate) async fn login(
     Ok((new_session(database, random, user_id).await, permission))
 }
 
+#[allow(dead_code)]
 pub(crate) async fn delete_user(auth_state: AuthState) {
     const DELETE_QUERY: &str = "DELETE FROM users 
         WHERE users.id = (

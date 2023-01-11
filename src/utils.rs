@@ -8,6 +8,7 @@ use crate::{
     COOKIE_MAX_AGE, USER_COOKIE_NAME,
 };
 
+#[allow(dead_code)]
 pub(crate) fn login_response(session_token: SessionToken) -> impl axum::response::IntoResponse {
     http::Response::builder()
         .status(http::StatusCode::SEE_OTHER)
@@ -26,6 +27,7 @@ pub(crate) fn login_response(session_token: SessionToken) -> impl axum::response
 }
 
 // TODO database and change session...?
+#[allow(dead_code)]
 pub(crate) async fn logout_response() -> impl axum::response::IntoResponse {
     Response::builder()
         .status(http::StatusCode::SEE_OTHER)
