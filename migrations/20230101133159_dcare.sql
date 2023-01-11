@@ -1,6 +1,6 @@
 -- DROP TABLE IF EXISTS sessions;
--- DROP TABLE IF EXISTS order_histories;
--- DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS order_histories;
+DROP TABLE IF EXISTS orders;
 -- DROP TABLE IF EXISTS users;
 -- DROP TABLE IF EXISTS titles;
 -- DROP TABLE IF EXISTS departments;
@@ -73,8 +73,9 @@ CREATE TABLE IF NOT EXISTS status (
 
 -- 工單
 CREATE TABLE IF NOT EXISTS orders (
-    id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    issue_time timestamptz NOT NULL,    -- 開單時間
+    id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    number text NOT NULL,
+    issue_at timestamptz NOT NULL DEFAULT NOW(),    -- 開單時間
 
     department_id integer REFERENCES departments (id) ON DELETE CASCADE, -- 收件地點
     contact_id integer REFERENCES users (id) ON DELETE CASCADE,          -- 直服專員
@@ -82,11 +83,11 @@ CREATE TABLE IF NOT EXISTS orders (
     customer_phone text NOT NULL, -- 客戶手機
     customer_address text,        -- 客戶地址
     model_id integer REFERENCES models (id) ON DELETE CASCADE,           -- 品牌/型號
-    purchase_time timestamptz,    -- 購買時間
+    purchase_at date,    -- 購買時間
     accessory_id1 integer REFERENCES accessories (id) ON DELETE CASCADE, -- 配件1
     accessory_id2 integer REFERENCES accessories (id) ON DELETE CASCADE, -- 配件2
     accessory_other text,                                                -- 其它配件
-    appearance varbit NOT NULL,   -- 外觀
+    appearance bit(8) NOT NULL,   -- 外觀
     appearance_other text,        -- 外觀(其它)
     service text,                 -- 服務項目
     fault_id1 integer REFERENCES faults (id) ON DELETE CASCADE,  -- 故障1
@@ -104,8 +105,8 @@ CREATE TABLE IF NOT EXISTS orders (
 
 CREATE TABLE IF NOT EXISTS order_histories (
     id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    order_id integer REFERENCES orders (id) ON DELETE CASCADE,     -- 工單
-    change_time timestamptz NOT NULL,    -- 開單時間
+    order_id bigint REFERENCES orders (id) ON DELETE CASCADE,     -- 工單
+    change_at timestamptz NOT NULL,    -- 開單時間
     issuer_id integer REFERENCES users (id) ON DELETE CASCADE,     -- 人員
     status_id integer REFERENCES status (id) ON DELETE CASCADE,    -- 工單狀態
     remark text,                  -- 備註

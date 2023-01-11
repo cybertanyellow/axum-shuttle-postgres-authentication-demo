@@ -51,7 +51,7 @@ async fn title_id_or_insert(database: &Database, name: &str) -> Result<i32> {
     }
 }
 
-async fn department_id_or_insert(database: &Database, name: &str) -> Result<i32> {
+pub(crate) async fn department_id_or_insert(database: &Database, name: &str) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM departments WHERE name = $1;";
     let title: Option<(i32,)> = sqlx::query_as(QUERY)
         .bind(&name)
@@ -90,7 +90,7 @@ pub struct UserInfo {
     login_at: Option<DateTime<Utc>>,
 }
 
-async fn query_user(account: &str, database: &Database) -> Option<UserInfo> {
+pub(crate) async fn query_user(account: &str, database: &Database) -> Option<UserInfo> {
     const QUERY: &str = "SELECT u.account, u.permission, u.username, u.worker_id, t.name title, d.name department, phone, u.email, u.create_at, u.login_at FROM users u INNER JOIN titles t ON t.id = u.title_id INNER JOIN departments d ON d.id = u.department_id WHERE u.account = $1";
 
     if let Ok(user) = sqlx::query_as::<_, UserInfo>(QUERY)
@@ -336,6 +336,12 @@ impl ApiResponse {
             code,
             message,
         }
+    }
+
+    pub fn update(&mut self, code: u16, message: Option<String>) -> &mut Self {
+        self.code = code;
+        self.message = message;
+        self
     }
 }
 
