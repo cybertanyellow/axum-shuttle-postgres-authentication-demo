@@ -32,7 +32,7 @@ type Price = i32;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct OrderInfo {
-    number: String,
+    id: i64,
     issue_at: DateTime<Utc>,
 
     department: Option<String>,
@@ -70,8 +70,7 @@ pub struct OrderUpdate {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct OrderNew {
-    number: String,
-
+    //number: String,
     department: Option<String>,
     contact: Option<String>,
     customer_name: Option<String>,
@@ -221,14 +220,12 @@ pub(crate) async fn order_create(
     Extension(_auth_state): Extension<AuthState>,
     Json(order): Json<OrderNew>,
 ) -> impl IntoResponse {
-    /*let mut resp = ApiResponse::new(400, Some(String::from("TODO")));
-    (StatusCode::OK, Json(resp)).into_response()*/
     let mut resp = ApiResponse::new(200, Some(String::from("success")));
 
-    if query_order(&database, &order.number).await.is_some() {
+    /*if query_order(&database, &order.number).await.is_some() {
         resp.update(400, Some("order exist".to_string()));
         return (StatusCode::OK, Json(resp)).into_response();
-    }
+    }*/
 
     let contact_id = if let Some(ref contact) = order.contact {
         match query_user_id(&database, contact).await {
@@ -354,9 +351,8 @@ pub(crate) async fn order_create(
     };
 
     const INSERT_QUERY: &str =
-        "INSERT INTO orders (number, department_id, contact_id, customer_name, customer_phone, customer_address, model_id, purchase_at, accessory_id1, accessory_id2, accessory_other, appearance, appearance_other, service, fault_id1, fault_id2, fault_other, photo_url, remark, cost, prepaid_free, status_id, servicer_id, maintainer_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING id;";
+        "INSERT INTO orders (department_id, contact_id, customer_name, customer_phone, customer_address, model_id, purchase_at, accessory_id1, accessory_id2, accessory_other, appearance, appearance_other, service, fault_id1, fault_id2, fault_other, photo_url, remark, cost, prepaid_free, status_id, servicer_id, maintainer_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) RETURNING id;";
     let fetch_one: Result<(i32,), _> = sqlx::query_as(INSERT_QUERY)
-        .bind(&order.number)
         .bind(department_id)
         .bind(contact_id)
         .bind(&order.customer_name)
@@ -511,16 +507,17 @@ async fn status_id_or_insert(
     }
 }
 
+#[allow(dead_code)]
 async fn query_order(
     database: &Database,
-    num: &str
+    id: i64,
 ) -> Option<OrderInfo> {
-    const QUERY: &str = "SELECT o.number, o.issue_at, d.name department, o.customer_name, o.customer_phone, o.customer_address, m.brand, m.model, o.purchase_at, o.accessory_other, o.appearance, o.appearance_other, o.service, o.fault_other, o.photo_url, o.remark, o.cost, o.prepaid_free, s.flow status FROM orders o INNER JOIN models m ON m.id = o.model_id INNER JOIN departments d ON d.id = o.department_id INNER JOIN models m ON m.id = o.model_id INNER JOIN status s ON s.id = o.status_id WHERE o.number = $1";
+    const QUERY: &str = "SELECT o.id, o.issue_at, d.name department, o.customer_name, o.customer_phone, o.customer_address, m.brand, m.model, o.purchase_at, o.accessory_other, o.appearance, o.appearance_other, o.service, o.fault_other, o.photo_url, o.remark, o.cost, o.prepaid_free, s.flow status FROM orders o INNER JOIN models m ON m.id = o.model_id INNER JOIN departments d ON d.id = o.department_id INNER JOIN models m ON m.id = o.model_id INNER JOIN status s ON s.id = o.status_id WHERE o.id = $1";
 
     /* TODO map users/accessories/faults table */
 
     if let Ok(user) = sqlx::query_as::<_, OrderInfo>(QUERY)
-        .bind(num)
+        .bind(id)
         .fetch_optional(database)
         .await
     {

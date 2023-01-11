@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS status (
 -- 工單
 CREATE TABLE IF NOT EXISTS orders (
     id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    number text NOT NULL,
+    --number text NOT NULL,
     issue_at timestamptz NOT NULL DEFAULT NOW(),    -- 開單時間
 
     department_id integer REFERENCES departments (id) ON DELETE CASCADE, -- 收件地點
@@ -104,9 +104,10 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 
 CREATE TABLE IF NOT EXISTS order_histories (
-    id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    change_at timestamptz NOT NULL DEFAULT NOW(),    -- 開單時間
+
     order_id bigint REFERENCES orders (id) ON DELETE CASCADE,     -- 工單
-    change_at timestamptz NOT NULL,    -- 開單時間
     issuer_id integer REFERENCES users (id) ON DELETE CASCADE,     -- 人員
     status_id integer REFERENCES status (id) ON DELETE CASCADE,    -- 工單狀態
     remark text,                  -- 備註
