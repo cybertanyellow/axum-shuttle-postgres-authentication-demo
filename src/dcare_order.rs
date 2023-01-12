@@ -56,8 +56,8 @@ pub struct OrderInfo {
     fault_other: Option<String>,
     photo_url: Option<String>,
     remark: Option<String>,
-    cost: Option<String>,
-    prepaid_free: Option<String>,
+    cost: Option<i32>,
+    prepaid_free: Option<i32>,
 
     status: String,
     servicer: Option<String>,
@@ -215,26 +215,24 @@ pub(crate) async fn order_list_request(
         orders: None,
     };
 
-    {
-        /*XXX, test*/
+    /*{
         const TEST1: &str = "SELECT id,issue_at,department_id,contact_id,customer_name,customer_phone,model_id,purchase_at FROM orders;";
         let order: Option<(i32,DateTime<Utc>,i32,i32,Option<String>,String,i32,Option<NaiveDate>)> = sqlx::query_as(TEST1)
             .fetch_optional(&database)
             .await
             .unwrap();
         info!("[debug] order get {:?}", order);
-    }
+    }*/
 
-
-    const QUERY: &str = "SELECT o.id, o.issue_at, d.name department, o.customer_name, o.customer_phone, o.customer_address, m.brand, m.model, o.purchase_at, o.accessory_other, o.appearance, o.appearance_other, o.service, o.fault_other, o.photo_url, o.remark, o.cost, o.prepaid_free, s.flow status FROM orders o INNER JOIN models m ON m.id = o.model_id INNER JOIN departments d ON d.id = o.department_id INNER JOIN models m ON m.id = o.model_id INNER JOIN status s ON s.id = o.status_id";
+    const QUERY: &str = "SELECT o.id, o.issue_at, d.name department, u1.username contact, o.customer_name, o.customer_phone, o.customer_address, m.brand, m.model, o.purchase_at, s1.item accessory_id1, s2.item accessory_id2, o.accessory_other, o.appearance, o.appearance_other, o.service, f1.item fault_id1, f2.item fault_id2, o.fault_other, o.photo_url, o.remark, o.cost, o.prepaid_free, s.flow status, NULL servicer, NULL maintainer FROM orders o INNER JOIN models m ON m.id = o.model_id INNER JOIN departments d ON d.id = o.department_id INNER JOIN status s ON s.id = o.status_id INNER JOIN users u1 ON u1.id = o.contact_id INNER JOIN accessories s1 ON s1.id = o.accessory_id1 INNER JOIN accessories s2 ON s2.id = o.accessory_id2 INNER JOIN faults f1 ON f1.id = o.fault_id1 INNER JOIN faults f2 ON f2.id = o.fault_id1;";
 
     /* TODO map users/accessories/faults table */
 
-    if let Ok(user) = sqlx::query_as::<_, OrderInfo>(QUERY)
+    if let Ok(orders) = sqlx::query_as::<_, OrderInfo>(QUERY)
         .fetch_all(&database)
         .await
     {
-        resp.orders = Some(user);
+        resp.orders = Some(orders);
         resp.code = 200;
     }
     (StatusCode::OK, Json(resp)).into_response()
