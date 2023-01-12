@@ -12,8 +12,8 @@ use chrono::{DateTime, Utc, NaiveDate};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 //use serde_json::json;
 use tracing::{
-    //debug, info,
-    error,
+    //debug,
+    info, error,
 };
 use utoipa::{IntoParams, ToSchema};
 
@@ -32,7 +32,7 @@ type Price = i32;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct OrderInfo {
-    id: i64,
+    id: i32,
     issue_at: DateTime<Utc>,
 
     department: Option<String>,
@@ -92,8 +92,8 @@ pub struct OrderNew {
     fault_other: Option<String>,
     photo_url: Option<String>,
     remark: Option<String>,
-    cost: Option<String>,
-    prepaid_free: Option<String>,
+    cost: Option<i32>,
+    prepaid_free: Option<i32>,
 
     status: String,
     servicer: Option<String>,
@@ -116,7 +116,7 @@ pub struct OrdersResponse {
     get,
     path = "/api/v1/order/{id}",
     params(
-        ("id" = i64, Path, description = "order ID")
+        ("id" = i32, Path, description = "order ID")
     ),
     responses(
         (status = 200, description = "get detail order information", body = OrderResponse)
@@ -125,7 +125,7 @@ pub struct OrdersResponse {
 pub(crate) async fn order_request(
     Extension(_auth_state): Extension<AuthState>,
     Extension(database): Extension<Database>,
-    Path(id): Path<i64>,
+    Path(id): Path<i32>,
 ) -> impl IntoResponse {
     let mut resp = OrderResponse {
         code: 400,
@@ -151,7 +151,7 @@ pub(crate) async fn order_request(
     put,
     path = "/api/v1/order/{id}",
     params(
-        ("id" = i64, Path, description = "order ID")
+        ("id" = i32, Path, description = "order ID")
     ),
     request_body = OrderUpdate,
     responses(
@@ -167,7 +167,7 @@ pub(crate) async fn order_request(
 )]
 pub(crate) async fn order_update(
     Extension(/*mut */_current_user): Extension<AuthState>,
-    Path(_id): Path<i64>,
+    Path(_id): Path<i32>,
     Extension(_database): Extension<Database>,
     Json(_order): Json<OrderUpdate>,
 ) -> impl IntoResponse {
@@ -179,7 +179,7 @@ pub(crate) async fn order_update(
     delete,
     path = "/api/v1/order/{id}",
     params(
-        ("id" = i64, Path, description = "order ID to delete")
+        ("id" = i32, Path, description = "order ID to delete")
     ),
     responses(
         (status = 200, description = "delete success", body = ApiResponse, example = json!(ApiResponse::new(200, Some(String::from("success"))))),
@@ -194,7 +194,7 @@ pub(crate) async fn order_update(
 pub(crate) async fn order_delete(
     Extension(mut _current_user): Extension<AuthState>,
     Extension(_database): Extension<Database>,
-    Path(_id): Path<i64>,
+    Path(_id): Path<i32>,
 ) -> impl IntoResponse {
     let resp = ApiResponse::new(400, Some(String::from("TODO")));
     (StatusCode::OK, Json(resp)).into_response()
@@ -214,6 +214,18 @@ pub(crate) async fn order_list_request(
         code: 400,
         orders: None,
     };
+
+    {
+        /*XXX, test*/
+        const TEST1: &str = "SELECT id,issue_at,department_id,contact_id,customer_name,customer_phone,model_id,purchase_at FROM orders;";
+        let order: Option<(i32,DateTime<Utc>,i32,i32,Option<String>,String,i32,Option<NaiveDate>)> = sqlx::query_as(TEST1)
+            .fetch_optional(&database)
+            .await
+            .unwrap();
+        info!("[debug] order get {:?}", order);
+    }
+
+
     const QUERY: &str = "SELECT o.id, o.issue_at, d.name department, o.customer_name, o.customer_phone, o.customer_address, m.brand, m.model, o.purchase_at, o.accessory_other, o.appearance, o.appearance_other, o.service, o.fault_other, o.photo_url, o.remark, o.cost, o.prepaid_free, s.flow status FROM orders o INNER JOIN models m ON m.id = o.model_id INNER JOIN departments d ON d.id = o.department_id INNER JOIN models m ON m.id = o.model_id INNER JOIN status s ON s.id = o.status_id";
 
     /* TODO map users/accessories/faults table */
@@ -260,7 +272,7 @@ pub(crate) async fn order_create(
             }
         }
     } else {
-        0 /* super user? */
+        1 /* super user? */
     };
 
     let department_id = match order.department {
@@ -375,7 +387,7 @@ pub(crate) async fn order_create(
     };
 
     const INSERT_QUERY: &str =
-        "INSERT INTO orders (department_id, contact_id, customer_name, customer_phone, customer_address, model_id, purchase_at, accessory_id1, accessory_id2, accessory_other, appearance, appearance_other, service, fault_id1, fault_id2, fault_other, photo_url, remark, cost, prepaid_free, status_id, servicer_id, maintainer_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) RETURNING id;";
+        "INSERT INTO orders (department_id, contact_id, customer_name, customer_phone, customer_address, model_id, purchase_at, accessory_id1, accessory_id2, accessory_other, appearance, appearance_other, service, fault_id1, fault_id2, fault_other, photo_url, remark, cost, prepaid_free, status_id, servicer_id, maintainer_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23) RETURNING id;";
     let fetch_one: Result<(i32,), _> = sqlx::query_as(INSERT_QUERY)
         .bind(department_id)
         .bind(contact_id)
@@ -534,7 +546,7 @@ async fn status_id_or_insert(
 #[allow(dead_code)]
 async fn query_order(
     database: &Database,
-    id: i64,
+    id: i32,
 ) -> Option<OrderInfo> {
     const QUERY: &str = "SELECT o.id, o.issue_at, d.name department, o.customer_name, o.customer_phone, o.customer_address, m.brand, m.model, o.purchase_at, o.accessory_other, o.appearance, o.appearance_other, o.service, o.fault_other, o.photo_url, o.remark, o.cost, o.prepaid_free, s.flow status FROM orders o INNER JOIN models m ON m.id = o.model_id INNER JOIN departments d ON d.id = o.department_id INNER JOIN models m ON m.id = o.model_id INNER JOIN status s ON s.id = o.status_id WHERE o.id = $1";
 
