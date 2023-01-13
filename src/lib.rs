@@ -88,6 +88,11 @@ pub fn get_router(database: Database) -> Router {
             dcare_user::user_api,
             dcare_user::update_user_api,
             dcare_user::users_api,
+            dcare_order::order_request,
+            dcare_order::order_list_request,
+            dcare_order::order_delete,
+            dcare_order::order_update,
+            dcare_order::order_create,
         ),
         components(
             schemas(
@@ -95,11 +100,15 @@ pub fn get_router(database: Database) -> Router {
                 dcare_user::UserInfo, dcare_user::ResponseUser, dcare_user::ResponseUsers,
                 dcare_user::UpdateMe, dcare_user::UpdateUser,
                 dcare_user::ApiResponse,
+                dcare_order::OrdersResponse,
+                dcare_order::OrderResponse,
+                dcare_order::OrderNew,
+                dcare_order::OrderUpdate,
             )
         ),
         modifiers(&SecurityAddon),
         tags(
-            (name = "user", description = "User management API")
+            (name = "dcare", description = "dcare service/management API")
             )
      )]
     struct ApiDoc;
