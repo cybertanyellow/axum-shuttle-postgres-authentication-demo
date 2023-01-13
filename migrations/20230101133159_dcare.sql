@@ -1,6 +1,6 @@
 -- DROP TABLE IF EXISTS sessions;
-DROP TABLE IF EXISTS order_histories;
-DROP TABLE IF EXISTS orders;
+-- DROP TABLE IF EXISTS order_histories;
+-- DROP TABLE IF EXISTS orders;
 -- DROP TABLE IF EXISTS users;
 -- DROP TABLE IF EXISTS titles;
 -- DROP TABLE IF EXISTS departments;

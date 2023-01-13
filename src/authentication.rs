@@ -44,6 +44,7 @@ impl SessionToken {
 
 #[derive(Clone)]
 pub(crate) struct CurrentUser {
+    pub id: i32,
     pub account: String,
     pub permission: BitVec,
 }
@@ -68,8 +69,9 @@ impl AuthState {
                 .await
                 .unwrap();
 
-            if let Some((_id, account, permission)) = user {
+            if let Some((id, account, permission)) = user {
                 *store = Some(CurrentUser {
+                    id,
                     account,
                     permission,
                 });
