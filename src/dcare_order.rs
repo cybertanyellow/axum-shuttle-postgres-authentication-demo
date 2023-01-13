@@ -30,6 +30,12 @@ use crate::dcare_user::{
 };
 
 type Price = i32;
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+struct OrderDeleteRes {
+    id: i32,
+}
+
 //struct Price(i32);
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct OrderRawInfo {
@@ -221,7 +227,7 @@ pub(crate) async fn order_update(
     Extension(database): Extension<Database>,
     Json(order): Json<OrderUpdate>,
 ) -> impl IntoResponse {
-    let mut resp = ApiResponse::new(400, Some(String::from("TODO")));
+    let mut resp = ApiResponse::new(400, None);
 
     let issuer = if let Some(user) = current_user.get_user().await {
         user
@@ -367,33 +373,6 @@ pub(crate) async fn order_update(
     let prepaid_free = order.prepaid_free
         .or(orig.prepaid_free);
 
-    /*if create_order_history(&database, oid, issuer_id, status_id, &remark, cost)
-
-    const UPDATE_QUERY: &str =
-        "UPDATE orders SET department_id = $1, customer_address = $2, accessory_id1 = $3, accessory_id2 = $4, accessory_other = $5, appearance = $6, appearance_other = $7, service = $8, fault_id1 = $9, fault_id2 = $10, fault_other = $11, photo_url = $12, remark = $13, cost = $14, prepaid_free = $15, status_id = $16, servicer_id = $17, maintainer_id = $18 WHERE id = $19 RETURNING id;";
-    let fetch_one: Result<(i32,), _> = sqlx::query_as(UPDATE_QUERY)
-        .bind(department_id)
-        .bind(customer_address)
-        .bind(accessory_id1)
-        .bind(accessory_id2)
-        .bind(accessory_other)
-        .bind(appearance)
-        .bind(appearance_other)
-        .bind(service)
-        .bind(fault_id1)
-        .bind(fault_id2)
-        .bind(fault_other)
-        .bind(photo_url)
-        .bind(remark)
-        .bind(cost)
-        .bind(prepaid_free)
-        .bind(status_id)
-        .bind(servicer_id)
-        .bind(maintainer_id)
-        .bind(oid)
-        .fetch_one(&database)
-        .await;*/
-
     const UPDATE_QUERY: &str = r#"
         WITH order_updated AS (
             UPDATE orders SET 
@@ -419,10 +398,10 @@ pub(crate) async fn order_update(
         )
         INSERT INTO order_histories (
             order_id,
-            issuer_id
+            issuer_id,
             status_id,
             remark,
-            cost,
+            cost
         ) VALUES (
             $19,
             $20,
@@ -456,7 +435,7 @@ pub(crate) async fn order_update(
 
     match fetch_one {
         Ok((id,)) => {
-            resp.update(200, Some(format!("order{id} update success")));
+            resp.update(200, Some(format!("order update success - history{id}")));
         },
         Err(e) => {
             resp.update(500, Some(format!("{e}")));
@@ -483,11 +462,43 @@ pub(crate) async fn order_update(
     ),
 )]
 pub(crate) async fn order_delete(
-    Extension(mut _current_user): Extension<AuthState>,
-    Extension(_database): Extension<Database>,
-    Path(_id): Path<i32>,
+    Extension(mut current_user): Extension<AuthState>,
+    Extension(database): Extension<Database>,
+    Path(oid): Path<i32>,
 ) -> impl IntoResponse {
-    let resp = ApiResponse::new(400, Some(String::from("TODO")));
+    let mut resp = ApiResponse::new(400, None);
+
+    let _issuer = if let Some(user) = current_user.get_user().await {
+        user
+    } else {
+        resp.update(400, Some(format!("{}", &NotLoggedIn)));
+        return (StatusCode::OK, Json(resp)).into_response();
+    };
+
+    let _orig = match query_raw_order(&database, oid).await {
+        Some(orig) => orig,
+        None => {
+            resp.update(404, Some(format!("order{oid} not found")));
+            error!("{:?}", &resp);
+            return (StatusCode::OK, Json(resp)).into_response();
+        }
+    };
+
+    const QUERY: &str = r#"
+        WITH order_hist_deleted AS (
+            DELETE FROM order_histories WHERE order_id = $1
+            RETURNING id
+        )
+        DELETE from orders WHERE id = $1
+        RETURNING id;"#;
+
+    if let Ok(_) = sqlx::query_as::<_, OrderDeleteRes>(QUERY)
+        .bind(oid)
+        .fetch_all(&database)
+        .await
+    {
+        resp.update(200, Some("delete success".to_string()));
+    }
     (StatusCode::OK, Json(resp)).into_response()
 }
 
@@ -506,16 +517,7 @@ pub(crate) async fn order_list_request(
         orders: None,
     };
 
-    /*{
-        const TEST1: &str = "SELECT id,issue_at,department_id,contact_id,customer_name,customer_phone,model_id,purchase_at FROM orders;";
-        let order: Option<(i32,DateTime<Utc>,i32,i32,Option<String>,String,i32,Option<NaiveDate>)> = sqlx::query_as(TEST1)
-            .fetch_optional(&database)
-            .await
-            .unwrap();
-        info!("[debug] order get {:?}", order);
-    }*/
-
-    const QUERY: &str = "SELECT o.id, o.issue_at, d.name AS department, u1.username AS contact, o.customer_name, o.customer_phone, o.customer_address, m.brand, m.model, o.purchase_at, s1.item AS accessory_id1, s2.item AS accessory_id2, o.accessory_other, o.appearance, o.appearance_other, o.service, f1.item AS fault_id1, f2.item AS fault_id2, o.fault_other, o.photo_url, o.remark, o.cost, o.prepaid_free, s.flow status, u2.username AS servicer, u3.username AS maintainer FROM orders o INNER JOIN models m ON m.id = o.model_id LEFT JOIN departments d ON d.id = o.department_id INNER JOIN status s ON s.id = o.status_id LEFT JOIN users u1 ON u1.id = o.contact_id LEFT JOIN accessories s1 ON s1.id = o.accessory_id1 LEFT JOIN accessories s2 ON s2.id = o.accessory_id2 LEFT JOIN faults f1 ON f1.id = o.fault_id1 LEFT JOIN faults f2 ON f2.id = o.fault_id1 LEFT JOIN users u2 ON u2.id = o.servicer_id LEFT JOIN users u3 ON u3.id = o.maintainer_id;";
+    const QUERY: &str = "SELECT o.id, o.issue_at, d.name AS department, u1.username AS contact, o.customer_name, o.customer_phone, o.customer_address, m.brand, m.model, o.purchase_at, s1.item AS accessory_id1, s2.item AS accessory_id2, o.accessory_other, o.appearance, o.appearance_other, o.service, f1.item AS fault_id1, f2.item AS fault_id2, o.fault_other, o.photo_url, o.remark, o.cost, o.prepaid_free, s.flow status, u2.username AS servicer, u3.username AS maintainer FROM orders o INNER JOIN models m ON m.id = o.model_id LEFT JOIN departments d ON d.id = o.department_id INNER JOIN status s ON s.id = o.status_id LEFT JOIN users u1 ON u1.id = o.contact_id LEFT JOIN accessories s1 ON s1.id = o.accessory_id1 LEFT JOIN accessories s2 ON s2.id = o.accessory_id2 LEFT JOIN faults f1 ON f1.id = o.fault_id1 LEFT JOIN faults f2 ON f2.id = o.fault_id2 LEFT JOIN users u2 ON u2.id = o.servicer_id LEFT JOIN users u3 ON u3.id = o.maintainer_id;";
 
     if let Ok(orders) = sqlx::query_as::<_, OrderInfo>(QUERY)
         .fetch_all(&database)
@@ -847,7 +849,7 @@ async fn query_order(
     database: &Database,
     id: i32,
 ) -> Option<OrderInfo> {
-    const QUERY: &str = "SELECT o.id, o.issue_at, d.name AS department, u1.username AS contact, o.customer_name, o.customer_phone, o.customer_address, m.brand, m.model, o.purchase_at, s1.item AS accessory_id1, s2.item AS accessory_id2, o.accessory_other, o.appearance, o.appearance_other, o.service, f1.item AS fault_id1, f2.item AS fault_id2, o.fault_other, o.photo_url, o.remark, o.cost, o.prepaid_free, s.flow status, u2.username AS servicer, u3.username AS maintainer FROM orders o INNER JOIN models m ON m.id = o.model_id LEFT JOIN departments d ON d.id = o.department_id INNER JOIN status s ON s.id = o.status_id LEFT JOIN users u1 ON u1.id = o.contact_id LEFT JOIN accessories s1 ON s1.id = o.accessory_id1 LEFT JOIN accessories s2 ON s2.id = o.accessory_id2 LEFT JOIN faults f1 ON f1.id = o.fault_id1 LEFT JOIN faults f2 ON f2.id = o.fault_id1 LEFT JOIN users u2 ON u2.id = o.servicer_id LEFT JOIN users u3 ON u3.id = o.maintainer_id WHERE o.id = $1;";
+    const QUERY: &str = "SELECT o.id, o.issue_at, d.name AS department, u1.username AS contact, o.customer_name, o.customer_phone, o.customer_address, m.brand, m.model, o.purchase_at, s1.item AS accessory_id1, s2.item AS accessory_id2, o.accessory_other, o.appearance, o.appearance_other, o.service, f1.item AS fault_id1, f2.item AS fault_id2, o.fault_other, o.photo_url, o.remark, o.cost, o.prepaid_free, s.flow status, u2.username AS servicer, u3.username AS maintainer FROM orders o INNER JOIN models m ON m.id = o.model_id LEFT JOIN departments d ON d.id = o.department_id INNER JOIN status s ON s.id = o.status_id LEFT JOIN users u1 ON u1.id = o.contact_id LEFT JOIN accessories s1 ON s1.id = o.accessory_id1 LEFT JOIN accessories s2 ON s2.id = o.accessory_id2 LEFT JOIN faults f1 ON f1.id = o.fault_id1 LEFT JOIN faults f2 ON f2.id = o.fault_id2 LEFT JOIN users u2 ON u2.id = o.servicer_id LEFT JOIN users u3 ON u3.id = o.maintainer_id WHERE o.id = $1;";
 
     match sqlx::query_as::<_, OrderInfo>(QUERY)
         .bind(id)
@@ -863,7 +865,7 @@ async fn query_raw_order(
     database: &Database,
     id: i32,
 ) -> Option<OrderRawInfo> {
-    const QUERY: &str = "SELECT * FROM order WHERE id = $1;";
+    const QUERY: &str = "SELECT * FROM orders WHERE id = $1;";
 
     match sqlx::query_as::<_, OrderRawInfo>(QUERY)
         .bind(id)
