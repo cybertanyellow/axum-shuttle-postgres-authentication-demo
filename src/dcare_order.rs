@@ -12,8 +12,8 @@ use chrono::{DateTime, Utc, NaiveDate};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 //use serde_json::json;
 use tracing::{
-    //debug,
-    info, error,
+    //debug, info,
+    error,
 };
 use utoipa::{IntoParams, ToSchema};
 
@@ -86,14 +86,14 @@ pub struct OrderInfo {
     model: Option<String>,
 
     purchase_at: Option<NaiveDate>,
-    accessory_id1: Option<String>,
-    accessory_id2: Option<String>,
+    accessory1: Option<String>,
+    accessory2: Option<String>,
     accessory_other: Option<String>,
     appearance: BitVec,
     appearance_other: Option<String>,
     service: Option<String>,
-    fault_id1: Option<String>,
-    fault_id2: Option<String>,
+    fault1: Option<String>,
+    fault2: Option<String>,
     fault_other: Option<String>,
     photo_url: Option<String>,
     remark: Option<String>,
@@ -105,7 +105,7 @@ pub struct OrderInfo {
     maintainer: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct OrderUpdate {
     department: Option<String>,
     customer_address: Option<String>,
@@ -517,7 +517,46 @@ pub(crate) async fn order_list_request(
         orders: None,
     };
 
-    const QUERY: &str = "SELECT o.id, o.issue_at, d.name AS department, u1.username AS contact, o.customer_name, o.customer_phone, o.customer_address, m.brand, m.model, o.purchase_at, s1.item AS accessory_id1, s2.item AS accessory_id2, o.accessory_other, o.appearance, o.appearance_other, o.service, f1.item AS fault_id1, f2.item AS fault_id2, o.fault_other, o.photo_url, o.remark, o.cost, o.prepaid_free, s.flow status, u2.username AS servicer, u3.username AS maintainer FROM orders o INNER JOIN models m ON m.id = o.model_id LEFT JOIN departments d ON d.id = o.department_id INNER JOIN status s ON s.id = o.status_id LEFT JOIN users u1 ON u1.id = o.contact_id LEFT JOIN accessories s1 ON s1.id = o.accessory_id1 LEFT JOIN accessories s2 ON s2.id = o.accessory_id2 LEFT JOIN faults f1 ON f1.id = o.fault_id1 LEFT JOIN faults f2 ON f2.id = o.fault_id2 LEFT JOIN users u2 ON u2.id = o.servicer_id LEFT JOIN users u3 ON u3.id = o.maintainer_id;";
+    const QUERY: &str = r#"
+        SELECT
+            o.id,
+            o.issue_at,
+            d.name AS department,
+            u1.username AS contact,
+            o.customer_name,
+            o.customer_phone,
+            o.customer_address,
+            m.brand,
+            m.model,
+            o.purchase_at,
+            s1.item AS accessory1,
+            s2.item AS accessory2,
+            o.accessory_other,
+            o.appearance,
+            o.appearance_other,
+            o.service,
+            f1.item AS fault1,
+            f2.item AS fault2,
+            o.fault_other,
+            o.photo_url,
+            o.remark,
+            o.cost,
+            o.prepaid_free,
+            s.flow status,
+            u2.username AS servicer,
+            u3.username AS maintainer
+        FROM orders o
+            LEFT JOIN models m ON m.id = o.model_id
+            LEFT JOIN departments d ON d.id = o.department_id
+            LEFT JOIN status s ON s.id = o.status_id
+            LEFT JOIN users u1 ON u1.id = o.contact_id
+            LEFT JOIN accessories s1 ON s1.id = o.accessory_id1
+            LEFT JOIN accessories s2 ON s2.id = o.accessory_id2
+            LEFT JOIN faults f1 ON f1.id = o.fault_id1
+            LEFT JOIN faults f2 ON f2.id = o.fault_id2
+            LEFT JOIN users u2 ON u2.id = o.servicer_id
+            LEFT JOIN users u3 ON u3.id = o.maintainer_id;
+    "#;
 
     if let Ok(orders) = sqlx::query_as::<_, OrderInfo>(QUERY)
         .fetch_all(&database)
@@ -687,8 +726,36 @@ pub(crate) async fn order_create(
         None
     };
 
-    const INSERT_QUERY: &str =
-        "INSERT INTO orders (department_id, contact_id, customer_name, customer_phone, customer_address, model_id, purchase_at, accessory_id1, accessory_id2, accessory_other, appearance, appearance_other, service, fault_id1, fault_id2, fault_other, photo_url, remark, cost, prepaid_free, status_id, servicer_id, maintainer_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23) RETURNING id;";
+    const INSERT_QUERY: &str = r#"
+        INSERT INTO orders (
+            department_id,
+            contact_id,
+            customer_name,
+            customer_phone,
+            customer_address,
+            model_id,
+            purchase_at,
+            accessory_id1,
+            accessory_id2,
+            accessory_other,
+            appearance,
+            appearance_other,
+            service,
+            fault_id1,
+            fault_id2,
+            fault_other,
+            photo_url,
+            remark,
+            cost,
+            prepaid_free,
+            status_id,
+            servicer_id,
+            maintainer_id
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8,
+            $9, $10, $11, $12, $13, $14, $15,
+            $16, $17, $18, $19, $20, $21, $22, $23
+        ) RETURNING id;"#;
     let fetch_one: Result<(i32,), _> = sqlx::query_as(INSERT_QUERY)
         .bind(department_id)
         .bind(contact_id)
@@ -745,7 +812,13 @@ async fn model_id_or_insert(
     if let Some((id,)) = m_id {
         Ok(id)
     } else {
-        const INSERT_QUERY: &str = "INSERT INTO models (brand, model) VALUES ($1, $2) RETURNING id;";
+        const INSERT_QUERY: &str = r#"
+            INSERT INTO models (
+                brand, model
+            ) VALUES (
+                $1, $2
+            ) RETURNING id;"#;
+
         let fetch_one = sqlx::query_as(INSERT_QUERY)
             .bind(brand)
             .bind(model)
@@ -774,7 +847,12 @@ async fn accessory_id_or_insert(
     if let Some((id,)) = accessory {
         Ok(id)
     } else {
-        const INSERT_QUERY: &str = "INSERT INTO accessories (item, price) VALUES ($1, $2) RETURNING id;";
+        const INSERT_QUERY: &str = r#"
+            INSERT INTO accessories (
+                item, price
+            ) VALUES (
+                $1, $2
+            ) RETURNING id;"#;
         let fetch_one = sqlx::query_as(INSERT_QUERY)
             .bind(item)
             .bind(price)
@@ -803,7 +881,12 @@ async fn fault_id_or_insert(
     if let Some((id,)) = f_id {
         Ok(id)
     } else {
-        const INSERT_QUERY: &str = "INSERT INTO faults (item, cost) VALUES ($1, $2) RETURNING id;";
+        const INSERT_QUERY: &str = r#"
+            INSERT INTO faults (
+                item, cost
+            ) VALUES (
+                $1, $2
+            ) RETURNING id;"#;
         let fetch_one = sqlx::query_as(INSERT_QUERY)
             .bind(item)
             .bind(cost)
@@ -849,7 +932,46 @@ async fn query_order(
     database: &Database,
     id: i32,
 ) -> Option<OrderInfo> {
-    const QUERY: &str = "SELECT o.id, o.issue_at, d.name AS department, u1.username AS contact, o.customer_name, o.customer_phone, o.customer_address, m.brand, m.model, o.purchase_at, s1.item AS accessory_id1, s2.item AS accessory_id2, o.accessory_other, o.appearance, o.appearance_other, o.service, f1.item AS fault_id1, f2.item AS fault_id2, o.fault_other, o.photo_url, o.remark, o.cost, o.prepaid_free, s.flow status, u2.username AS servicer, u3.username AS maintainer FROM orders o INNER JOIN models m ON m.id = o.model_id LEFT JOIN departments d ON d.id = o.department_id INNER JOIN status s ON s.id = o.status_id LEFT JOIN users u1 ON u1.id = o.contact_id LEFT JOIN accessories s1 ON s1.id = o.accessory_id1 LEFT JOIN accessories s2 ON s2.id = o.accessory_id2 LEFT JOIN faults f1 ON f1.id = o.fault_id1 LEFT JOIN faults f2 ON f2.id = o.fault_id2 LEFT JOIN users u2 ON u2.id = o.servicer_id LEFT JOIN users u3 ON u3.id = o.maintainer_id WHERE o.id = $1;";
+    const QUERY: &str = r#"
+        SELECT
+            o.id,
+            o.issue_at,
+            d.name AS department,
+            u1.username AS contact,
+            o.customer_name,
+            o.customer_phone,
+            o.customer_address,
+            m.brand,
+            m.model,
+            o.purchase_at,
+            s1.item AS accessory1,
+            s2.item AS accessory2,
+            o.accessory_other,
+            o.appearance,
+            o.appearance_other,
+            o.service,
+            f1.item AS fault1,
+            f2.item AS fault2,
+            o.fault_other,
+            o.photo_url,
+            o.remark,
+            o.cost,
+            o.prepaid_free,
+            s.flow status,
+            u2.username AS servicer,
+            u3.username AS maintainer
+        FROM orders o
+            LEFT JOIN models m ON m.id = o.model_id
+            LEFT JOIN departments d ON d.id = o.department_id
+            LEFT JOIN status s ON s.id = o.status_id
+            LEFT JOIN users u1 ON u1.id = o.contact_id
+            LEFT JOIN accessories s1 ON s1.id = o.accessory_id1
+            LEFT JOIN accessories s2 ON s2.id = o.accessory_id2
+            LEFT JOIN faults f1 ON f1.id = o.fault_id1
+            LEFT JOIN faults f2 ON f2.id = o.fault_id2
+            LEFT JOIN users u2 ON u2.id = o.servicer_id
+            LEFT JOIN users u3 ON u3.id = o.maintainer_id WHERE o.id = $1;
+    "#;
 
     match sqlx::query_as::<_, OrderInfo>(QUERY)
         .bind(id)
