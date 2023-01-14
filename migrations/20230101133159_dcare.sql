@@ -1,9 +1,9 @@
--- DROP TABLE IF EXISTS sessions;
--- DROP TABLE IF EXISTS order_histories;
--- DROP TABLE IF EXISTS orders;
--- DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS order_histories;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS users;
 -- DROP TABLE IF EXISTS titles;
--- DROP TABLE IF EXISTS departments;
+DROP TABLE IF EXISTS departments;
 -- DROP TABLE IF EXISTS models;
 -- DROP TABLE IF EXISTS accessories;
 -- DROP TABLE IF EXISTS faults;
@@ -18,7 +18,10 @@ CREATE TABLE IF NOT EXISTS titles (
 -- 部門(涵 門市&維保中心)
 CREATE TABLE IF NOT EXISTS departments (
     id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    name text NOT NULL UNIQUE,          -- 部門單位名稱
+    create_at timestamptz NOT NULL DEFAULT NOW(),   -- 創建時間
+    update_at timestamptz,
+    shorten text NOT NULL UNIQUE,       -- 部門單位縮寫
+    name text UNIQUE,          -- 部門單位名稱
     address text        -- 部門地址
 );
 

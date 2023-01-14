@@ -25,12 +25,10 @@ use crate::authentication::{
 use crate::errors::NotLoggedIn;
 use crate::{
     Database, Random,
-    Pagination,
+    Pagination, ApiResponse,
 };
-use crate::dcare_user::{
-    ApiResponse, query_user_id,
-    department_id_or_insert,
-};
+use crate::dcare_user::query_user_id;
+use crate::department::department_id_or_insert;
 
 type Price = i32;
 
@@ -526,8 +524,7 @@ pub(crate) async fn order_list_request(
         orders: None,
     };
 
-    let (offset, entries) = pagination
-        .map_or((1, 1000), |p| (p.offset, p.entries));
+    let (offset, entries) = Pagination::parse(pagination);
 
     const QUERY: &str = r#"
         SELECT

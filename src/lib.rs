@@ -3,11 +3,12 @@ mod dcare_user;
 mod errors;
 mod utils;
 mod dcare_order;
+mod department;
 
 use std::sync::{Arc, Mutex};
 
 use axum::{
-    extract::{Extension/*, Path*/},
+    extract::{Extension, Query},
     //extract::Multipart,
     middleware,
     response::{Html, IntoResponse, Redirect},
@@ -17,6 +18,23 @@ use axum::{
 };
 use http::Response;
 
+use errors::{/*LoginError, NoUser, SignupError, */NotLoggedIn};
+use pbkdf2::password_hash::rand_core::OsRng;
+use rand_chacha::ChaCha8Rng;
+use rand_core::{RngCore, SeedableRng};
+use serde::{Deserialize, Serialize};
+use shuttle_service::{error::CustomError, ShuttleAxum};
+use sqlx::Executor;
+use tera::{Context, Tera};
+use utoipa::{
+    openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
+    Modify, OpenApi,
+    IntoParams, ToSchema,
+};
+use utoipa_swagger_ui::SwaggerUi;
+
+use utils::*;
+
 use authentication::{
     //delete_user, login, signup,
     auth, AuthState,
@@ -25,26 +43,13 @@ use dcare_user::{
     logout_response_api, me_api, post_delete_api, post_login_api, post_signup_api,
     update_myself_api, update_user_api, user_api, users_api,
 };
-use errors::{/*LoginError, NoUser, SignupError, */NotLoggedIn};
-use pbkdf2::password_hash::rand_core::OsRng;
-use rand_chacha::ChaCha8Rng;
-use rand_core::{RngCore, SeedableRng};
-use serde::Deserialize;
-use shuttle_service::{error::CustomError, ShuttleAxum};
-use sqlx::Executor;
-use tera::{Context, Tera};
-use utoipa::{
-    openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
-    Modify, OpenApi,
-    IntoParams,
-};
-use utoipa_swagger_ui::SwaggerUi;
-
-use utils::*;
-
 use dcare_order::{
     order_create, order_list_request,
     order_request, order_update, order_delete,
+};
+use department::{
+    department_create, department_list_request,
+    department_request, department_update, department_delete,
 };
 
 type Templates = Arc<Tera>;
@@ -58,6 +63,32 @@ const COOKIE_MAX_AGE: &str = "9999999";
 pub struct Pagination {
     pub offset: i32,
     pub entries: i32,
+}
+impl Pagination {
+    pub fn parse(mine: Option<Query<Self>>) -> (i32, i32) {
+        mine.map_or((0, 1000), |p| (p.offset, p.entries))
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams, Default)]
+pub struct ApiResponse {
+    code: u16,
+    message: Option<String>,
+}
+
+impl ApiResponse {
+    pub fn new(code: u16, message: Option<String>) -> Self {
+        Self {
+            code,
+            message,
+        }
+    }
+
+    pub fn update(&mut self, code: u16, message: Option<String>) -> &mut Self {
+        self.code = code;
+        self.message = message;
+        self
+    }
 }
 
 #[shuttle_service::main]
@@ -95,22 +126,35 @@ pub fn get_router(database: Database) -> Router {
             dcare_user::user_api,
             dcare_user::update_user_api,
             dcare_user::users_api,
+
             dcare_order::order_request,
             dcare_order::order_list_request,
             dcare_order::order_delete,
             dcare_order::order_update,
             dcare_order::order_create,
+
+            department::department_request,
+            department::department_list_request,
+            department::department_delete,
+            department::department_update,
+            department::department_create,
         ),
         components(
             schemas(
                 dcare_user::UserLogin, dcare_user::ResponseUserLogin, dcare_user::UserNew,
                 dcare_user::UserInfo, dcare_user::ResponseUser, dcare_user::ResponseUsers,
                 dcare_user::UpdateMe, dcare_user::UpdateUser,
-                dcare_user::ApiResponse,
+                ApiResponse,
+
                 dcare_order::OrdersResponse, dcare_order::OrderResponse,
                 dcare_order::OrderInfo,
                 dcare_order::OrderNew,
                 dcare_order::OrderUpdate,
+
+                department::DepartmentsResponse, department::DepartmentResponse,
+                department::DepartmentInfo,
+                department::DepartmentNew,
+                department::DepartmentUpdate,
             )
         ),
         modifiers(&SecurityAddon),
@@ -150,6 +194,11 @@ pub fn get_router(database: Database) -> Router {
             get(order_request).put(order_update).delete(order_delete),
         )
         .route("/api/v1/order", get(order_list_request).post(order_create))
+        .route(
+            "/api/v1/department/:id",
+            get(department_request).put(department_update).delete(department_delete),
+        )
+        .route("/api/v1/department", get(department_list_request).post(department_create))
         .layer(middleware::from_fn(move |req, next| {
             auth(req, next, middleware_database.clone())
         }))

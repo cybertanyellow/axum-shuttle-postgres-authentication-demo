@@ -28,8 +28,9 @@ use crate::errors::NotLoggedIn;
 //use crate::errors::{LoginError, NoUser, SignupError};
 use crate::{
     Database, Random, COOKIE_MAX_AGE, USER_COOKIE_NAME,
-    Pagination,
+    Pagination, ApiResponse,
 };
+use crate::department::department_id_or_insert;
 
 async fn title_id_or_insert(database: &Database, name: &str) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM titles WHERE name = $1;";
@@ -51,30 +52,6 @@ async fn title_id_or_insert(database: &Database, name: &str) -> Result<i32> {
         match fetch_one {
             Ok((title_id,)) => Ok(title_id),
             Err(err) => Err(anyhow!("insert title fail - {err}")),
-        }
-    }
-}
-
-pub(crate) async fn department_id_or_insert(database: &Database, name: &str) -> Result<i32> {
-    const QUERY: &str = "SELECT id FROM departments WHERE name = $1;";
-    let title: Option<(i32,)> = sqlx::query_as(QUERY)
-        .bind(&name)
-        .fetch_optional(database)
-        .await
-        .unwrap();
-
-    if let Some((id,)) = title {
-        Ok(id)
-    } else {
-        const INSERT_QUERY: &str = "INSERT INTO departments (name) VALUES ($1) RETURNING id;";
-        let fetch_one = sqlx::query_as(INSERT_QUERY)
-            .bind(name)
-            .fetch_one(database)
-            .await;
-
-        match fetch_one {
-            Ok((department_id,)) => Ok(department_id),
-            Err(err) => Err(anyhow!("insert department fail - {err}")),
         }
     }
 }
@@ -358,27 +335,6 @@ pub(crate) async fn post_login_api(
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams, Default)]
-pub struct ApiResponse {
-    code: u16,
-    message: Option<String>,
-}
-
-impl ApiResponse {
-    pub fn new(code: u16, message: Option<String>) -> Self {
-        Self {
-            code,
-            message,
-        }
-    }
-
-    pub fn update(&mut self, code: u16, message: Option<String>) -> &mut Self {
-        self.code = code;
-        self.message = message;
-        self
-    }
-}
-
 #[utoipa::path(
     delete,
     path = "/api/v1/user/{account}",
@@ -503,8 +459,7 @@ pub(crate) async fn users_api(
     Extension(database): Extension<Database>,
     pagination: Option<Query<Pagination>>,
 ) -> impl IntoResponse {
-    let (offset, entries) = pagination
-        .map_or((1, 1000), |p| (p.offset, p.entries));
+    let (offset, entries) = Pagination::parse(pagination);
 
     const QUERY: &str = r#"
         SELECT
