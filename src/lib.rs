@@ -29,13 +29,14 @@ use errors::{/*LoginError, NoUser, SignupError, */NotLoggedIn};
 use pbkdf2::password_hash::rand_core::OsRng;
 use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
-//use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use shuttle_service::{error::CustomError, ShuttleAxum};
 use sqlx::Executor;
 use tera::{Context, Tera};
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
     Modify, OpenApi,
+    IntoParams,
 };
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -52,6 +53,12 @@ type Random = Arc<Mutex<ChaCha8Rng>>;
 
 const USER_COOKIE_NAME: &str = "user_token";
 const COOKIE_MAX_AGE: &str = "9999999";
+
+#[derive(Deserialize, IntoParams)]
+pub struct Pagination {
+    pub offset: i32,
+    pub entries: i32,
+}
 
 #[shuttle_service::main]
 async fn server(#[shuttle_shared_db::Postgres] pool: Database) -> ShuttleAxum {
@@ -100,8 +107,8 @@ pub fn get_router(database: Database) -> Router {
                 dcare_user::UserInfo, dcare_user::ResponseUser, dcare_user::ResponseUsers,
                 dcare_user::UpdateMe, dcare_user::UpdateUser,
                 dcare_user::ApiResponse,
-                dcare_order::OrdersResponse,
-                dcare_order::OrderResponse,
+                dcare_order::OrdersResponse, dcare_order::OrderResponse,
+                dcare_order::OrderInfo,
                 dcare_order::OrderNew,
                 dcare_order::OrderUpdate,
             )

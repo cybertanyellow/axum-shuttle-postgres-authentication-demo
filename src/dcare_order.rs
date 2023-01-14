@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Extension, Path},
+    extract::{Extension, Path, Query},
     http::StatusCode,
     response::IntoResponse,
     //response::{Html, Redirect},
@@ -23,7 +23,10 @@ use crate::authentication::{
 };
 
 use crate::errors::NotLoggedIn;
-use crate::{Database, Random};
+use crate::{
+    Database, Random,
+    Pagination,
+};
 use crate::dcare_user::{
     ApiResponse, query_user_id,
     department_id_or_insert,
@@ -89,6 +92,7 @@ pub struct OrderInfo {
     accessory1: Option<String>,
     accessory2: Option<String>,
     accessory_other: Option<String>,
+    #[schema(example = json!({"storage": [1], "nbits": 8}))]
     appearance: BitVec,
     appearance_other: Option<String>,
     service: Option<String>,
@@ -113,6 +117,7 @@ pub struct OrderUpdate {
     accessory1: Option<String>,
     accessory2: Option<String>,
     accessory_other: Option<String>,
+    #[schema(example = json!({"storage": [1], "nbits": 8}))]
     appearance: Option<BitVec>,
     appearance_other: Option<String>,
     service: Option<String>,
@@ -505,17 +510,24 @@ pub(crate) async fn order_delete(
 #[utoipa::path(
     get,
     path = "/api/v1/order",
+    params(
+        Pagination
+    ),
     responses(
         (status = 200, description = "get order list", body = OrdersResponse)
     )
 )]
 pub(crate) async fn order_list_request(
-    Extension(database): Extension<Database>
+    Extension(database): Extension<Database>,
+    pagination: Option<Query<Pagination>>,
 ) -> impl IntoResponse {
     let mut resp = OrdersResponse {
         code: 400,
         orders: None,
     };
+
+    let (offset, entries) = pagination
+        .map_or((1, 1000), |p| (p.offset, p.entries));
 
     const QUERY: &str = r#"
         SELECT
@@ -555,10 +567,13 @@ pub(crate) async fn order_list_request(
             LEFT JOIN faults f1 ON f1.id = o.fault_id1
             LEFT JOIN faults f2 ON f2.id = o.fault_id2
             LEFT JOIN users u2 ON u2.id = o.servicer_id
-            LEFT JOIN users u3 ON u3.id = o.maintainer_id;
+            LEFT JOIN users u3 ON u3.id = o.maintainer_id
+        LIMIT $1 OFFSET $2;
     "#;
 
     if let Ok(orders) = sqlx::query_as::<_, OrderInfo>(QUERY)
+        .bind(entries)
+        .bind(offset)
         .fetch_all(&database)
         .await
     {

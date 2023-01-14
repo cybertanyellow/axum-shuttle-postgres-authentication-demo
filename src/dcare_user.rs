@@ -3,7 +3,7 @@
 //use std::{os::unix::prelude::PermissionsExt, fs::Permissions};
 
 use axum::{
-    extract::{Extension, Path},
+    extract::{Extension, Path, Query},
     http::StatusCode,
     response::IntoResponse,
     //response::{Html, Redirect},
@@ -26,7 +26,10 @@ use crate::authentication::{
 };
 use crate::errors::NotLoggedIn;
 //use crate::errors::{LoginError, NoUser, SignupError};
-use crate::{Database, Random, COOKIE_MAX_AGE, USER_COOKIE_NAME};
+use crate::{
+    Database, Random, COOKIE_MAX_AGE, USER_COOKIE_NAME,
+    Pagination,
+};
 
 async fn title_id_or_insert(database: &Database, name: &str) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM titles WHERE name = $1;";
@@ -489,15 +492,40 @@ pub struct ResponseUsers {
 #[utoipa::path(
     get,
     path = "/api/v1/user",
+    params(
+        Pagination
+    ),
     responses(
         (status = 200, description = "get user list", body = ResponseUsers)
     )
 )]
-pub(crate) async fn users_api(Extension(database): Extension<Database>) -> impl IntoResponse {
-    //const QUERY: &str = "SELECT username FROM users LIMIT 100;";
-    const QUERY: &str = "SELECT u.account, u.permission, u.username, u.worker_id, t.name title, d.name department, phone, u.email, u.create_at, u.login_at FROM users u INNER JOIN titles t ON t.id = u.title_id INNER JOIN departments d ON d.id = u.department_id";
+pub(crate) async fn users_api(
+    Extension(database): Extension<Database>,
+    pagination: Option<Query<Pagination>>,
+) -> impl IntoResponse {
+    let (offset, entries) = pagination
+        .map_or((1, 1000), |p| (p.offset, p.entries));
+
+    const QUERY: &str = r#"
+        SELECT
+            u.account,
+            u.permission,
+            u.username,
+            u.worker_id,
+            t.name title,
+            d.name department,
+            phone, u.email,
+            u.create_at,
+            u.login_at
+        FROM users u
+            LEFT JOIN titles t ON t.id = u.title_id
+            LEFT JOIN departments d ON d.id = u.department_id;
+        LIMIT $1 OFFSET $2;
+    "#;
 
     if let Ok(users) = sqlx::query_as::<_, UserInfo>(QUERY)
+        .bind(entries)
+        .bind(offset)
         .fetch_all(&database)
         .await
     {
