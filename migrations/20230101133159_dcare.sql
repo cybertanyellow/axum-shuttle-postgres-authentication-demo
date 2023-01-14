@@ -2,12 +2,12 @@ DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS order_histories;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS users;
--- DROP TABLE IF EXISTS titles;
+DROP TABLE IF EXISTS titles;
 DROP TABLE IF EXISTS departments;
--- DROP TABLE IF EXISTS models;
--- DROP TABLE IF EXISTS accessories;
--- DROP TABLE IF EXISTS faults;
--- DROP TABLE IF EXISTS status;
+DROP TABLE IF EXISTS models;
+DROP TABLE IF EXISTS accessories;
+DROP TABLE IF EXISTS faults;
+DROP TABLE IF EXISTS status;
 
 -- 職稱
 CREATE TABLE IF NOT EXISTS titles (
@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS users (
     email text NOT NULL,
 
     create_at timestamptz NOT NULL DEFAULT NOW(),   -- 創建時間
-    login_at timestamptz             -- 登人時間(最後)
+    login_at timestamptz,            -- 登人時間(最後)
+    update_at timestamptz            -- 修改時間
 );
 -- '{"account":"administrator","password":"fy90676855","username":"i-am-superuser","worker_id":"AA00001","title":"superuser","department":"backend","phone":"0900123456","email":"admin@fika.com","permission":{"storage":[1],"nbits":8}}'
 
@@ -77,8 +78,11 @@ CREATE TABLE IF NOT EXISTS status (
 -- 工單
 CREATE TABLE IF NOT EXISTS orders (
     id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    --number text NOT NULL,
     issue_at timestamptz NOT NULL DEFAULT NOW(),    -- 開單時間
+
+    -- for future
+    issuer_id integer REFERENCES users (id) ON DELETE CASCADE, -- 敲單人員
+    number text,
 
     department_id integer REFERENCES departments (id) ON DELETE CASCADE, -- 收件地點
     contact_id integer REFERENCES users (id) ON DELETE CASCADE,          -- 直服專員
@@ -111,7 +115,7 @@ CREATE TABLE IF NOT EXISTS order_histories (
     change_at timestamptz NOT NULL DEFAULT NOW(),    -- 開單時間
 
     order_id integer REFERENCES orders (id) ON DELETE CASCADE,     -- 工單
-    issuer_id integer REFERENCES users (id) ON DELETE CASCADE,     -- 人員
+    issuer_id integer REFERENCES users (id) ON DELETE CASCADE, -- 敲單人員
     status_id integer REFERENCES status (id) ON DELETE CASCADE,    -- 工單狀態
     remark text,                  -- 備註
     cost integer

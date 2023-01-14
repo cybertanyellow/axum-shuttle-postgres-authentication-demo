@@ -56,6 +56,25 @@ async fn title_id_or_insert(database: &Database, name: &str) -> Result<i32> {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct UserRawInfo {
+    id: i32,
+
+    account: String,
+    password: String,
+    permission: BitVec,
+    username: Option<String>,
+    worker_id: Option<String>,
+    title_id: Option<i32>,
+    department_id: Option<i32>,
+    phone: String,
+    email: Option<String>,
+
+    create_at: DateTime<Utc>,
+    login_at: Option<DateTime<Utc>>,
+    update_at: Option<DateTime<Utc>>,
+}
+
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
 pub struct UserInfo {
     account: String,
@@ -63,8 +82,8 @@ pub struct UserInfo {
     permission: BitVec,
     username: Option<String>,
     worker_id: Option<String>,
-    title: String,
-    department: String,
+    title: Option<String>,
+    department: Option<String>,
     phone: String,
     email: String,
     create_at: DateTime<Utc>,
@@ -72,7 +91,23 @@ pub struct UserInfo {
 }
 
 pub(crate) async fn query_user(account: &str, database: &Database) -> Option<UserInfo> {
-    const QUERY: &str = "SELECT u.account, u.permission, u.username, u.worker_id, t.name title, d.name department, phone, u.email, u.create_at, u.login_at FROM users u INNER JOIN titles t ON t.id = u.title_id INNER JOIN departments d ON d.id = u.department_id WHERE u.account = $1";
+    const QUERY: &str = r#"
+        SELECT
+            u.account,
+            u.permission,
+            u.username,
+            u.worker_id,
+            t.name title,
+            d.name department,
+            phone,
+            u.email,
+            u.create_at,
+            u.login_at
+        FROM users u
+            LEFT JOIN titles t ON t.id = u.title_id
+            LEFT JOIN departments d ON d.id = u.department_id
+        WHERE u.account = $1;
+    "#;
 
     if let Ok(user) = sqlx::query_as::<_, UserInfo>(QUERY)
         .bind(account)
@@ -203,7 +238,7 @@ pub(crate) async fn post_signup_api(
 
     let title_id = match user.title {
         Some(title) => match title_id_or_insert(&database, &title).await {
-            Ok(id) => id,
+            Ok(id) => Some(id),
             Err(e) => {
                 resp.message = Some(format!("{e}"));
                 resp.code = 500;
@@ -211,12 +246,12 @@ pub(crate) async fn post_signup_api(
                 return (StatusCode::OK, Json(resp)).into_response();
             }
         },
-        None => 0,
+        None => None,
     };
 
     let department_id = match user.department {
         Some(department) => match department_id_or_insert(&database, &department).await {
-            Ok(id) => id,
+            Ok(id) => Some(id),
             Err(e) => {
                 resp.message = Some(format!("{e}"));
                 resp.code = 500;
@@ -224,7 +259,7 @@ pub(crate) async fn post_signup_api(
                 return (StatusCode::OK, Json(resp)).into_response();
             }
         },
-        None => 0,
+        None => None,
     };
 
     match signup2(
@@ -370,7 +405,7 @@ pub(crate) async fn post_delete_api(
         message: Some(String::from("success")),
     };
 
-    let target = match query_user(&account, &database).await {
+    let orig = match query_raw_user(&database, &account).await {
         Some(u) => u,
         None => {
             resp.code = 404;
@@ -378,7 +413,7 @@ pub(crate) async fn post_delete_api(
             return (StatusCode::OK, Json(resp)).into_response();
         }
     };
-    let allow = permission_check(current_user.get_user().await, &target);
+    let allow = permission_check(current_user.get_user().await, &orig);
 
     if allow == false {
         resp.code = 405;
@@ -474,7 +509,7 @@ pub(crate) async fn users_api(
             u.login_at
         FROM users u
             LEFT JOIN titles t ON t.id = u.title_id
-            LEFT JOIN departments d ON d.id = u.department_id;
+            LEFT JOIN departments d ON d.id = u.department_id
         LIMIT $1 OFFSET $2;
     "#;
 
@@ -750,7 +785,7 @@ pub(crate) async fn update_user_api(
         message: Some(String::from("success")),
     };
 
-    let target = match query_user(&account, &database).await {
+    let orig = match query_raw_user(&database, &account).await {
         Some(u) => u,
         None => {
             resp.code = 404;
@@ -759,47 +794,7 @@ pub(crate) async fn update_user_api(
         }
     };
 
-    /*let allow = if let Some(current) = current_user.get_user().await {
-        let current_role = PermissionRole::from(&current.permission);
-        let target_role = PermissionRole::from(&target.permission);
-
-        info!("TODO, user-{}/{:?} is {:?} try to change {:?}",
-              current.account, current.permission,
-              current_role, target_role);
-
-        match (current_role, target_role) {
-            (PermissionRole::Admin(role), _) => {
-                info!("{role} change anything");
-                true
-            },
-            (PermissionRole::Gm(role), PermissionRole::Admin(_)) => {
-                error!("{role} can't change admin");
-                false
-            },
-            (PermissionRole::Gm(role), PermissionRole::Gm(_)) => {
-                if target.account != current.account {
-                    error!("{role} can't change other GM");
-                    false
-                } else {
-                    info!("{role} change herself");
-                    true
-                }
-            },
-            (PermissionRole::Gm(role), _) => {
-                info!("{role} change other");
-                true
-            },
-            (_, _) => {
-                error!("staff can't change each other");
-                false
-            }
-        }
-
-    } else {
-        error!("TODO, not login");
-        false
-    };*/
-    let allow = permission_check(current_user.get_user().await, &target);
+    let allow = permission_check(current_user.get_user().await, &orig);
 
     if allow == false {
         resp.code = 405;
@@ -807,178 +802,105 @@ pub(crate) async fn update_user_api(
         return (StatusCode::OK, Json(resp)).into_response();
     }
 
-    match user.password {
-        None => info!("passowrd no change"),
+    let password = match user.password {
+        None => orig.password,
         Some(pwd) => {
             if let Ok(hashed_password) = password_hashed(&pwd) {
-                let fetch_one: Result<(i32,), _> = sqlx::query_as(
-                    "UPDATE users SET password = $1 WHERE account = $2 RETURNING id;",
-                )
-                .bind(&hashed_password)
-                .bind(&account)
-                .fetch_one(&database)
-                .await;
-                match fetch_one {
-                    Ok((id,)) => info!("update passowrd ok {id}"),
-                    Err(err) => {
-                        error!("update password fail {err}");
-
-                        resp.code = 500;
-                        resp.message = Some(format!("update password fail {err}"));
-                    }
-                }
+                hashed_password
             } else {
                 resp.message = Some(format!("password hashed wrong"));
                 resp.code = 400;
                 error!("{:?}", &resp);
+                return (StatusCode::OK, Json(resp)).into_response();
             }
         }
-    }
+    };
 
-    if let Some(permission) = user.permission {
-        let return_one: Result<(i32,), _> =
-            sqlx::query_as("UPDATE users SET permission = $1 WHERE account = $2 RETURNING id;")
-                .bind(&permission)
-                .bind(&account)
-                .fetch_one(&database)
-                .await;
-        match return_one {
-            Ok((id,)) => info!("update permission ok {id}"),
-            Err(err) => {
-                resp.message = Some(format!("update permission fail {err}"));
-                resp.code = 500;
-                error!("{:?}", &resp);
-            }
-        }
-    }
+    let permission = user.permission
+        .map_or(orig.permission, |p| p);
 
-    if let Some(username) = user.username {
-        let return_one: Result<(i32,), _> =
-            sqlx::query_as("UPDATE users SET username = $1 WHERE account = $2 RETURNING id;")
-                .bind(&username)
-                .bind(&account)
-                .fetch_one(&database)
-                .await;
-        match return_one {
-            Ok((id,)) => info!("update username ok {id}"),
-            Err(err) => {
-                resp.message = Some(format!("update username fail {err}"));
-                resp.code = 500;
-                error!("{:?}", &resp);
-            }
-        }
-    }
+    let username = user.username
+        .or(orig.username);
 
-    if let Some(worker_id) = user.worker_id {
-        let return_one: Result<(i32,), _> =
-            sqlx::query_as("UPDATE users SET worker_id = $1 WHERE account = $2 RETURNING id;")
-                .bind(&worker_id)
-                .bind(&account)
-                .fetch_one(&database)
-                .await;
-        match return_one {
-            Ok((id,)) => info!("update worker_id ok {id}"),
-            Err(err) => {
-                resp.message = Some(format!("update worker_id fail {err}"));
-                resp.code = 400;
-                error!("{:?}", &resp);
-            }
-        }
-    }
+    let worker_id = user.worker_id
+        .or(orig.worker_id);
 
-    if let Some(title) = user.title {
+    let title_id = if let Some(title) = user.title {
         match title_id_or_insert(&database, &title).await {
-            Ok(tid) => {
-                let return_one: Result<(i32,), _> = sqlx::query_as(
-                    "UPDATE users SET title_id = $1 WHERE account = $2 RETURNING id;",
-                )
-                .bind(tid)
-                .bind(&account)
-                .fetch_one(&database)
-                .await;
-                match return_one {
-                    Ok((id,)) => info!("update title ok {id}"),
-                    Err(err) => {
-                        resp.message = Some(format!("update title fail {err}"));
-                        resp.code = 500;
-                        error!("{:?}", &resp);
-                    }
-                }
-            }
+            Ok(tid) => Some(tid),
             Err(e) => {
                 //error!("title-id fail - {e}")
                 resp.message = Some(format!("title-id fail {e}"));
                 resp.code = 500;
                 error!("{:?}", &resp);
+                return (StatusCode::OK, Json(resp)).into_response();
             }
         }
-    }
+    } else {
+        orig.title_id
+    };
 
-    if let Some(department) = user.department {
+    let department_id = if let Some(department) = user.department {
         match department_id_or_insert(&database, &department).await {
-            Ok(did) => {
-                let return_one: Result<(i32,), _> = sqlx::query_as(
-                    "UPDATE users SET department_id = $1 WHERE account = $2 RETURNING id;",
-                )
-                .bind(&did)
-                .bind(&account)
-                .fetch_one(&database)
-                .await;
-                match return_one {
-                    Ok((id,)) => info!("update department ok {id}"),
-                    Err(err) => {
-                        resp.message = Some(format!("update department fail {err}"));
-                        resp.code = 500;
-                        error!("{:?}", &resp);
-                    }
-                }
-            }
+            Ok(did) => Some(did),
             Err(e) => {
                 resp.message = Some(format!("department-id fail {e}"));
                 resp.code = 500;
                 error!("{:?}", &resp);
+                return (StatusCode::OK, Json(resp)).into_response();
             }
         }
-    }
+    } else {
+        orig.department_id
+    };
 
-    if let Some(phone) = user.phone {
-        let return_one: Result<(i32,), _> =
-            sqlx::query_as("UPDATE users SET phone = $1 WHERE account = $2 RETURNING id;")
-                .bind(&phone)
-                .bind(&account)
-                .fetch_one(&database)
-                .await;
-        match return_one {
-            Ok((id,)) => info!("update phone ok {id}"),
-            Err(err) => {
-                resp.message = Some(format!("update phone fail {err}"));
-                resp.code = 500;
-                error!("{:?}", &resp);
-            }
+    let phone = user.phone
+        .or(Some(orig.phone));
+
+    let email = user.email
+        .or(orig.email);
+
+
+    const UPDATE_QUERY: &str = r#"
+        UPDATE users SET 
+            password = $1,
+            permission = $2,
+            username = $3,
+            worker_id = $4,
+            title_id = $5,
+            department_id = $6,
+            phone = $7,
+            email = $8,
+            update_at = $9
+        WHERE id = $10 RETURNING id;
+    "#;
+    let fetch_one: Result<(i32,), _> = sqlx::query_as(UPDATE_QUERY)
+        .bind(password)
+        .bind(permission)
+        .bind(username)
+        .bind(worker_id)
+        .bind(title_id)
+        .bind(department_id)
+        .bind(phone)
+        .bind(email)
+        .bind(Utc::now())
+        .bind(orig.id)
+        .fetch_one(&database)
+        .await;
+
+    match fetch_one {
+        Ok((id,)) => {
+            resp.update(200, Some(format!("order update success - history{id}")));
+        },
+        Err(e) => {
+            resp.update(500, Some(format!("{e}")));
+            error!("{:?}", &resp);
         }
     }
-
-    if let Some(email) = user.email {
-        let return_one: Result<(i32,), _> =
-            sqlx::query_as("UPDATE users SET email = $1 WHERE account = $2 RETURNING id;")
-                .bind(&email)
-                .bind(&account)
-                .fetch_one(&database)
-                .await;
-        match return_one {
-            Ok((id,)) => info!("update email ok {id}"),
-            Err(err) => {
-                resp.message = Some(format!("update email fail {err}"));
-                resp.code = 500;
-                error!("{:?}", &resp);
-            }
-        }
-    }
-
     (StatusCode::OK, Json(resp)).into_response()
 }
 
-fn permission_check(current: Option<&CurrentUser>, target: &UserInfo) -> bool {
+fn permission_check(current: Option<&CurrentUser>, target: &UserRawInfo) -> bool {
     if let Some(current) = current {
         let current_role = PermissionRole::from(&current.permission);
         let target_role = PermissionRole::from(&target.permission);
@@ -1053,3 +975,21 @@ async fn update_login_at(
 pub struct TestUser {
     permission: BitVec,
 }
+
+pub(crate) async fn query_raw_user(
+    database: &Database,
+    account: &str,
+) -> Option<UserRawInfo> {
+    const QUERY: &str = "SELECT * FROM users WHERE account = $1;";
+
+    if let Ok(user) = sqlx::query_as::<_, UserRawInfo>(QUERY)
+        .bind(account)
+        .fetch_optional(database)
+        .await
+    {
+        user
+    } else {
+        None
+    }
+}
+

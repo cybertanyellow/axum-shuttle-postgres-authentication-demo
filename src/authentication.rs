@@ -198,8 +198,8 @@ pub(crate) async fn signup2(
     permission: &BitVec,
     username: &str,
     worker_id: &str,
-    title_id: i32,
-    department_id: i32,
+    title_id: Option<i32>,
+    department_id: Option<i32>,
     phone: &str,
     email: &str,
 ) -> Result<SessionToken, SignupError> {
@@ -214,8 +214,22 @@ pub(crate) async fn signup2(
         return Err(SignupError::InvalidUsername);
     }
 
-    const INSERT_QUERY: &str =
-        "INSERT INTO users (account, password, permission, username, worker_id, title_id, department_id, phone, email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id;";
+    const INSERT_QUERY: &str = r#"
+        INSERT INTO users (
+            account,
+            password,
+            permission,
+            username,
+            worker_id,
+            title_id,
+            department_id,
+            phone,
+            email
+        ) VALUES (
+            $1, $2, $3, $4,
+            $5, $6, $7, $8,
+            $9
+        ) RETURNING id;"#;
 
     let hashed_password = if let Ok(pwd) = password_hashed(password) {
         pwd

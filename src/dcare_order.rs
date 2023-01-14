@@ -43,6 +43,9 @@ pub struct OrderRawInfo {
     id: i32,
     issue_at: DateTime<Utc>,
 
+    issuer_id: Option<i32>,
+    number: Option<String>,
+
     department_id: Option<i32>,
     contact_id: Option<i32>,
     customer_name: Option<String>,

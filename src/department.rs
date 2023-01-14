@@ -371,20 +371,29 @@ async fn query_raw_department(
         }
 }
 
-pub(crate) async fn department_id_or_insert(database: &Database, name: &str) -> Result<i32> {
-    const QUERY: &str = "SELECT id FROM departments WHERE name = $1;";
-    let title: Option<(i32,)> = sqlx::query_as(QUERY)
-        .bind(&name)
+pub(crate) async fn department_id_or_insert(
+    database: &Database,
+    shorten: &str
+) -> Result<i32> {
+    const QUERY: &str = "SELECT id FROM departments WHERE shorten = $1;";
+    let department: Option<(i32,)> = sqlx::query_as(QUERY)
+        .bind(shorten)
         .fetch_optional(database)
         .await
         .unwrap();
 
-    if let Some((id,)) = title {
+    if let Some((id,)) = department {
         Ok(id)
     } else {
-        const INSERT_QUERY: &str = "INSERT INTO departments (name) VALUES ($1) RETURNING id;";
+        const INSERT_QUERY: &str = r#"
+            INSERT INTO departments (
+                shorten
+            ) VALUES (
+                $1
+            ) RETURNING id;
+        "#;
         let fetch_one = sqlx::query_as(INSERT_QUERY)
-            .bind(name)
+            .bind(shorten)
             .fetch_one(database)
             .await;
 
