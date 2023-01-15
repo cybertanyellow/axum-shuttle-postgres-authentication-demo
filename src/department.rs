@@ -15,6 +15,7 @@ use tracing::{
     error,
 };
 use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
 
 use crate::authentication::{
     //CurrentUser,
@@ -160,7 +161,7 @@ pub(crate) async fn department_update(
         UPDATE departments SET 
             update_at = $1,
             name = $2,
-            address = $3,
+            address = $3
         WHERE shorten = $4 RETURNING id;"#;
     let fetch_one: Result<(i32,), _> = sqlx::query_as(UPDATE_QUERY)
         .bind(Utc::now())
@@ -371,7 +372,8 @@ async fn query_raw_department(
         }
 }
 
-pub(crate) async fn department_id_or_insert(
+#[allow(dead_code)]
+pub(crate) async fn department_shorten_or_insert(
     database: &Database,
     shorten: &str
 ) -> Result<i32> {
@@ -404,3 +406,39 @@ pub(crate) async fn department_id_or_insert(
     }
 }
 
+pub(crate) async fn department_name_or_insert(
+    database: &Database,
+    name: &str
+) -> Result<i32> {
+    const QUERY: &str = "SELECT id FROM departments WHERE name = $1;";
+    let department: Option<(i32,)> = sqlx::query_as(QUERY)
+        .bind(name)
+        .fetch_optional(database)
+        .await
+        .unwrap();
+
+    if let Some((id,)) = department {
+        Ok(id)
+    } else {
+        let shorten = Uuid::new_v4();
+        const INSERT_QUERY: &str = r#"
+            INSERT INTO departments (
+                shorten,
+                name
+            ) VALUES (
+                $1,
+                $2
+            ) RETURNING id;
+        "#;
+        let fetch_one = sqlx::query_as(INSERT_QUERY)
+            .bind(shorten.to_string())
+            .bind(name)
+            .fetch_one(database)
+            .await;
+
+        match fetch_one {
+            Ok((department_id,)) => Ok(department_id),
+            Err(err) => Err(anyhow!("insert department fail - {err}")),
+        }
+    }
+}

@@ -30,7 +30,7 @@ use crate::{
     Database, Random, COOKIE_MAX_AGE, USER_COOKIE_NAME,
     Pagination, ApiResponse,
 };
-use crate::department::department_id_or_insert;
+use crate::department::department_name_or_insert;
 
 async fn title_id_or_insert(database: &Database, name: &str) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM titles WHERE name = $1;";
@@ -250,7 +250,7 @@ pub(crate) async fn post_signup_api(
     };
 
     let department_id = match user.department {
-        Some(department) => match department_id_or_insert(&database, &department).await {
+        Some(department) => match department_name_or_insert(&database, &department).await {
             Ok(id) => Some(id),
             Err(e) => {
                 resp.message = Some(format!("{e}"));
@@ -841,7 +841,7 @@ pub(crate) async fn update_user_api(
     };
 
     let department_id = if let Some(department) = user.department {
-        match department_id_or_insert(&database, &department).await {
+        match department_name_or_insert(&database, &department).await {
             Ok(did) => Some(did),
             Err(e) => {
                 resp.message = Some(format!("department-id fail {e}"));

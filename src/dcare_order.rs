@@ -28,7 +28,7 @@ use crate::{
     Pagination, ApiResponse,
 };
 use crate::dcare_user::query_user_id;
-use crate::department::department_id_or_insert;
+use crate::department::department_name_or_insert;
 
 type Price = i32;
 
@@ -252,7 +252,7 @@ pub(crate) async fn order_update(
     };
 
     let department_id = match order.department {
-        Some(department) => match department_id_or_insert(&database, &department).await {
+        Some(department) => match department_name_or_insert(&database, &department).await {
             Ok(id) => Some(id),
             Err(e) => {
                 resp.update(500, Some(format!("{e}")));
@@ -619,7 +619,7 @@ pub(crate) async fn order_create(
     };
 
     let department_id = match order.department {
-        Some(department) => match department_id_or_insert(&database, &department).await {
+        Some(department) => match department_name_or_insert(&database, &department).await {
             Ok(id) => Some(id),
             Err(e) => {
                 resp.update(500, Some(format!("{e}")));
