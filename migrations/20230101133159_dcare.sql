@@ -15,14 +15,24 @@ CREATE TABLE IF NOT EXISTS titles (
     name text NOT NULL UNIQUE           -- 職稱
 );
 
+CREATE TABLE IF NOT EXISTS department_types (
+    id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    name text NOT NULL UNIQUE           -- 維保中心,營業點,總部,其他
+);
+
 -- 部門(涵 門市&維保中心)
 CREATE TABLE IF NOT EXISTS departments (
     id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     create_at timestamptz NOT NULL DEFAULT NOW(),   -- 創建時間
     update_at timestamptz,
-    shorten text NOT NULL UNIQUE,       -- 部門單位縮寫
-    name text UNIQUE,          -- 部門單位名稱
-    address text        -- 部門地址
+
+    shorten text NOT NULL UNIQUE,       -- 門市代號
+    store_name text UNIQUE,             -- 門市名稱
+    owner text,                         -- 負責人
+    telephone text,                     -- 門市電話
+    address text                        -- 門市地址
+    type_id integer REFERENCES department_types (id) ON DELETE CASCADE,
+    parent_id integer REFERENCES departments (id) ON DELETE CASCADE,
 );
 
 -- 工作人員, admin也算進來
