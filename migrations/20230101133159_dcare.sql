@@ -30,9 +30,9 @@ CREATE TABLE IF NOT EXISTS departments (
     store_name text UNIQUE,             -- 門市名稱
     owner text,                         -- 負責人
     telephone text,                     -- 門市電話
-    address text                        -- 門市地址
+    address text,                       -- 門市地址
     type_id integer REFERENCES department_types (id) ON DELETE CASCADE,
-    parent_id integer REFERENCES departments (id) ON DELETE CASCADE,
+    parent_id integer REFERENCES departments (id) ON DELETE CASCADE
 );
 
 -- 工作人員, admin也算進來

@@ -11,14 +11,15 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 //use serde_json::json;
 use tracing::{
-    //debug, info,
+    //debug,
+    info,
     error,
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use sqlx::{
     Row,
-    postgres::PgRow,
+    //postgres::PgRow,
 };
 
 use crate::authentication::{
@@ -58,6 +59,15 @@ pub struct DepartmentRawInfo {
     parent_id: Option<i32>,
 }
 
+#[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+pub struct DepartmentSummary {
+    shorten: String,
+    store_name: Option<String>,
+    owner: Option<String>,
+    telephone: Option<String>,
+    address: Option<String>,
+    type_id: Option<String>,
+}
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct DepartmentInfo {
@@ -105,7 +115,7 @@ pub struct DepartmentResponse {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct DepartmentsResponse {
     code: u16,
-    departments: Option<Vec<DepartmentInfo>>,
+    departments: Option<Vec<DepartmentSummary>>,
 }
 
 #[utoipa::path(
@@ -321,16 +331,18 @@ pub(crate) async fn department_list_request(
 
     const QUERY: &str = r#"
         SELECT
-            create_at,
-            update_at,
             shorten,
-            name,
+            store_name,
+            owner,
+            telephone,
+            t.name AS type_id,
             address
-        FROM departments
+        FROM departments d
+            LEFT JOIN department_types t ON t.id = d.type_id
         LIMIT $1 OFFSET $2;
     "#;
 
-    if let Ok(departments) = sqlx::query_as::<_, DepartmentInfo>(QUERY)
+    if let Ok(departments) = sqlx::query_as::<_, DepartmentSummary>(QUERY)
         .bind(entries)
         .bind(offset)
         .fetch_all(&database)
@@ -366,17 +378,44 @@ pub(crate) async fn department_create(
         return (StatusCode::OK, Json(resp)).into_response();
     };
 
+    let type_id = match department.type_id {
+        Some(type_id) => match department_type_or_insert(&database, &type_id).await {
+            Ok(id) => Some(id),
+            Err(e) => {
+                resp.update(500, Some(format!("{e}")));
+                error!("{:?}", &resp);
+                return (StatusCode::OK, Json(resp)).into_response();
+            }
+        },
+        None => None,
+    };
+
+    let parent_id = match department.parent {
+        Some(p_shorten) => {
+            query_parent_id(&database, &p_shorten).await
+        },
+        None => None,
+    };
+
     const INSERT_QUERY: &str = r#"
         INSERT INTO departments (
             shorten,
-            name,
+            store_name,
+            owner,
+            telephone,
+            type_id,
+            parent_id,
             address
         ) VALUES (
             $1, $2, $3
         ) RETURNING id;"#;
     let fetch_one: Result<(i32,), _> = sqlx::query_as(INSERT_QUERY)
         .bind(department.shorten)
-        .bind(department.name)
+        .bind(department.store_name)
+        .bind(department.owner)
+        .bind(department.telephone)
+        .bind(type_id)
+        .bind(parent_id)
         .bind(department.address)
         .fetch_one(&database)
         .await;
@@ -429,7 +468,7 @@ async fn query_department(
 
                 let parent = match raw.parent_id {
                     Some(id) => {
-                        query_parent(database, id).await
+                        query_parent_shorten(database, id).await
                     },
                     None => None,
                 };
@@ -555,7 +594,7 @@ async fn query_department_type(
 }
 
 #[allow(dead_code)]
-async fn query_parent(
+async fn query_parent_shorten(
     database: &Database,
     id: i32,
 ) -> Option<String> {
@@ -567,6 +606,27 @@ async fn query_parent(
         .await;
     match row {
         Ok(r) => Some(r.0),
+        Err(_) => None,
+    }
+}
+
+#[allow(dead_code)]
+async fn query_parent_id(
+    database: &Database,
+    shorten: &str,
+) -> Option<i32> {
+    const QUERY: &str = "SELECT id FROM departments WHERE shorten = $1;";
+
+    let row: Result<(String,), _> = sqlx::query_as(QUERY)
+        .bind(shorten)
+        .fetch_one(database)
+        .await;
+    match row {
+        Ok(r) => {
+            info!("TODO, check String-{:?} to integer?", r.0);
+            r.0.parse::<i32>()
+                .map_or(None, |i| Some(i))
+        },
         Err(_) => None,
     }
 }
