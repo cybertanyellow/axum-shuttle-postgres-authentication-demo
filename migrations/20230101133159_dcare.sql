@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS order_histories;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS titles;
+DROP TABLE IF EXISTS department_orgs;
 DROP TABLE IF EXISTS departments;
 DROP TABLE IF EXISTS models;
 DROP TABLE IF EXISTS accessories;
@@ -31,8 +32,13 @@ CREATE TABLE IF NOT EXISTS departments (
     owner text,                         -- 負責人
     telephone text,                     -- 門市電話
     address text,                       -- 門市地址
-    type_id integer REFERENCES department_types (id) ON DELETE CASCADE,
-    parent_id integer REFERENCES departments (id) ON DELETE CASCADE
+    type_id integer REFERENCES department_types (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS department_orgs (
+    id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    parent_id integer REFERENCES departments (id) ON DELETE CASCADE,
+    child_id integer REFERENCES departments (id) ON DELETE CASCADE
 );
 
 -- 工作人員, admin也算進來
