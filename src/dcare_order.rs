@@ -8,7 +8,7 @@ use axum::{
 
 use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
-use chrono::{DateTime, Utc, NaiveDate};
+use chrono::{DateTime, Utc, NaiveDate, Datelike, Timelike};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 //use serde_json::json;
 use tracing::{
@@ -44,7 +44,7 @@ pub struct OrderRawInfo {
     issue_at: DateTime<Utc>,
 
     issuer_id: Option<i32>,
-    number: Option<String>,
+    sn: Option<String>,
 
     department_id: Option<i32>,
     contact_id: Option<i32>,
@@ -77,7 +77,8 @@ pub struct OrderRawInfo {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct OrderInfo {
-    id: i32,
+    //id: i32,
+    sn: Option<String>,
     issue_at: DateTime<Utc>,
 
     department: Option<String>,
@@ -137,7 +138,6 @@ pub struct OrderUpdate {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct OrderNew {
-    //number: String,
     department: Option<String>,
     contact: Option<String>,
     customer_name: Option<String>,
@@ -181,9 +181,9 @@ pub struct OrdersResponse {
 
 #[utoipa::path(
     get,
-    path = "/api/v1/order/{id}",
+    path = "/api/v1/order/{sn}",
     params(
-        ("id" = i32, Path, description = "order ID")
+        ("sn" = String, Path, description = "order serial-number")
     ),
     responses(
         (status = 200, description = "get detail order information", body = OrderResponse)
@@ -192,28 +192,26 @@ pub struct OrdersResponse {
 pub(crate) async fn order_request(
     Extension(_auth_state): Extension<AuthState>,
     Extension(database): Extension<Database>,
-    Path(id): Path<i32>,
+    Path(sn): Path<String>,
 ) -> impl IntoResponse {
     let mut resp = OrderResponse {
         code: 400,
         order: None,
     };
 
-    match query_order(&database, id).await {
-        Some(o) => {
-            resp.code = 200;
-            resp.order = Some(o);
-        },
-        None => {},
+    if let Some(o) = query_order(&database, &sn).await {
+        resp.code = 200;
+        resp.order = Some(o);
     }
+
     (StatusCode::OK, Json(resp)).into_response()
 }
 
 #[utoipa::path(
     put,
-    path = "/api/v1/order/{id}",
+    path = "/api/v1/order/{sn}",
     params(
-        ("id" = i32, Path, description = "order ID")
+        ("sn" = String, Path, description = "order serial-number")
     ),
     request_body = OrderUpdate,
     responses(
@@ -229,7 +227,7 @@ pub(crate) async fn order_request(
 )]
 pub(crate) async fn order_update(
     Extension(mut current_user): Extension<AuthState>,
-    Path(oid): Path<i32>,
+    Path(sn): Path<String>,
     Extension(database): Extension<Database>,
     Json(order): Json<OrderUpdate>,
 ) -> impl IntoResponse {
@@ -242,10 +240,10 @@ pub(crate) async fn order_update(
         return (StatusCode::OK, Json(resp)).into_response();
     };
 
-    let orig = match query_raw_order(&database, oid).await {
+    let orig = match query_raw_order(&database, &sn).await {
         Some(orig) => orig,
         None => {
-            resp.update(404, Some(format!("order{oid} not found")));
+            resp.update(404, Some(format!("order/{sn} not found")));
             error!("{:?}", &resp);
             return (StatusCode::OK, Json(resp)).into_response();
         }
@@ -400,7 +398,7 @@ pub(crate) async fn order_update(
                 status_id = $16,
                 servicer_id = $17,
                 maintainer_id = $18
-            WHERE id = $19 RETURNING id
+            WHERE sn = $19 RETURNING id
         )
         INSERT INTO order_histories (
             order_id,
@@ -409,7 +407,7 @@ pub(crate) async fn order_update(
             remark,
             cost
         ) VALUES (
-            $19,
+            (SELECT id FROM order_updated),
             $20,
             $16,
             $13,
@@ -434,7 +432,7 @@ pub(crate) async fn order_update(
         .bind(status_id)
         .bind(servicer_id)
         .bind(maintainer_id)
-        .bind(oid)
+        .bind(sn)
         .bind(issuer.id)
         .fetch_one(&database)
         .await;
@@ -448,14 +446,14 @@ pub(crate) async fn order_update(
             error!("{:?}", &resp);
         }
     }
-    return (StatusCode::OK, Json(resp)).into_response();
+    (StatusCode::OK, Json(resp)).into_response()
 }
 
 #[utoipa::path(
     delete,
-    path = "/api/v1/order/{id}",
+    path = "/api/v1/order/{sn}",
     params(
-        ("id" = i32, Path, description = "order ID to delete")
+        ("sn" = String, Path, description = "order(serial-number) to delete")
     ),
     responses(
         (status = 200, description = "delete success", body = ApiResponse, example = json!(ApiResponse::new(200, Some(String::from("success"))))),
@@ -470,7 +468,7 @@ pub(crate) async fn order_update(
 pub(crate) async fn order_delete(
     Extension(mut current_user): Extension<AuthState>,
     Extension(database): Extension<Database>,
-    Path(oid): Path<i32>,
+    Path(sn): Path<String>,
 ) -> impl IntoResponse {
     let mut resp = ApiResponse::new(400, None);
 
@@ -481,10 +479,10 @@ pub(crate) async fn order_delete(
         return (StatusCode::OK, Json(resp)).into_response();
     };
 
-    let _orig = match query_raw_order(&database, oid).await {
+    let _orig = match query_raw_order(&database, &sn).await {
         Some(orig) => orig,
         None => {
-            resp.update(404, Some(format!("order{oid} not found")));
+            resp.update(404, Some(format!("order/{sn} not found")));
             error!("{:?}", &resp);
             return (StatusCode::OK, Json(resp)).into_response();
         }
@@ -492,16 +490,18 @@ pub(crate) async fn order_delete(
 
     const QUERY: &str = r#"
         WITH order_hist_deleted AS (
-            DELETE FROM order_histories WHERE order_id = $1
+            DELETE FROM order_histories
+                WHERE order_id = ( SELECT id FROM orders WHERE sn = $1)
             RETURNING id
         )
-        DELETE from orders WHERE id = $1
+        DELETE from orders WHERE sn = $1
         RETURNING id;"#;
 
-    if let Ok(_) = sqlx::query_as::<_, OrderDeleteRes>(QUERY)
-        .bind(oid)
+    if sqlx::query_as::<_, OrderDeleteRes>(QUERY)
+        .bind(sn)
         .fetch_all(&database)
         .await
+        .is_ok()
     {
         resp.update(200, Some("delete success".to_string()));
     }
@@ -531,9 +531,9 @@ pub(crate) async fn order_list_request(
 
     const QUERY: &str = r#"
         SELECT
-            o.id,
+            o.sn,
             o.issue_at,
-            d.name AS department,
+            d.store_name AS department,
             u1.username AS contact,
             o.customer_name,
             o.customer_phone,
@@ -601,11 +601,6 @@ pub(crate) async fn order_create(
 ) -> impl IntoResponse {
     let mut resp = ApiResponse::new(200, Some(String::from("success")));
 
-    /*if query_order(&database, &order.number).await.is_some() {
-        resp.update(400, Some("order exist".to_string()));
-        return (StatusCode::OK, Json(resp)).into_response();
-    }*/
-
     let contact_id = if let Some(ref contact) = order.contact {
         match query_user_id(&database, contact).await {
             Some(id) => Some(id),
@@ -644,10 +639,6 @@ pub(crate) async fn order_create(
         }
     };
 
-    /*let item = match order.accessory1 {
-        Some(ref a) => a,
-        None => "none",
-    };*/
     let accessory_id1 = match order.accessory1 {
         Some(ref item) => match accessory_id_or_insert(&database, item, 0).await {
             Ok(id) => Some(id),
@@ -660,10 +651,6 @@ pub(crate) async fn order_create(
         None => None,
     };
 
-    /*let item = match order.accessory2 {
-        Some(ref a) => a,
-        None => "none",
-    };*/
     let accessory_id2 = match order.accessory2 {
         Some(ref item) => match accessory_id_or_insert(&database, item, 0).await {
             Ok(id) => Some(id),
@@ -676,10 +663,6 @@ pub(crate) async fn order_create(
         None => None,
     };
 
-    /*let item = match order.fault1 {
-        Some(ref f) => f,
-        None => "none",
-    };*/
     let fault_id1 = match order.fault1 {
         Some(ref item) => match fault_id_or_insert(&database, item, 0).await {
             Ok(id) => Some(id),
@@ -692,10 +675,6 @@ pub(crate) async fn order_create(
         None => None,
     };
 
-    /*let item = match order.fault2 {
-        Some(ref f) => f,
-        None => "none",
-    };*/
     let fault_id2 = match order.fault2 {
         Some(ref item) => match fault_id_or_insert(&database, item, 0).await {
             Ok(id) => Some(id),
@@ -741,6 +720,8 @@ pub(crate) async fn order_create(
         None
     };
 
+    let sn = OrderSN::generate(&database, department_id).await;
+
     const INSERT_QUERY: &str = r#"
         INSERT INTO orders (
             department_id,
@@ -765,11 +746,12 @@ pub(crate) async fn order_create(
             prepaid_free,
             status_id,
             servicer_id,
-            maintainer_id
+            maintainer_id,
+            sn
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8,
-            $9, $10, $11, $12, $13, $14, $15,
-            $16, $17, $18, $19, $20, $21, $22, $23
+            $9, $10, $11, $12, $13, $14, $15, $16,
+            $17, $18, $19, $20, $21, $22, $23, $24
         ) RETURNING id;"#;
     let fetch_one: Result<(i32,), _> = sqlx::query_as(INSERT_QUERY)
         .bind(department_id)
@@ -778,7 +760,7 @@ pub(crate) async fn order_create(
         .bind(&order.customer_phone)
         .bind(&order.customer_address)
         .bind(model_id)
-        .bind(&order.purchase_at)
+        .bind(order.purchase_at)
         .bind(accessory_id1)
         .bind(accessory_id2)
         .bind(&order.accessory_other)
@@ -790,11 +772,12 @@ pub(crate) async fn order_create(
         .bind(&order.fault_other)
         .bind(&order.photo_url)
         .bind(&order.remark)
-        .bind(&order.cost)
-        .bind(&order.prepaid_free)
+        .bind(order.cost)
+        .bind(order.prepaid_free)
         .bind(status_id)
         .bind(servicer_id)
         .bind(maintainer_id)
+        .bind(&sn.0)
         .fetch_one(&database)
         .await;
 
@@ -807,7 +790,8 @@ pub(crate) async fn order_create(
             error!("{:?}", &resp);
         }
     }
-    return (StatusCode::OK, Json(resp)).into_response();
+
+    (StatusCode::OK, Json(resp)).into_response()
 }
 
 async fn model_id_or_insert(
@@ -818,8 +802,8 @@ async fn model_id_or_insert(
 ) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM models WHERE brand = $1 AND model = $2;";
     let m_id: Option<(i32,)> = sqlx::query_as(QUERY)
-        .bind(&brand)
-        .bind(&model)
+        .bind(brand)
+        .bind(model)
         .fetch_optional(database)
         .await
         .unwrap();
@@ -854,7 +838,7 @@ async fn accessory_id_or_insert(
 ) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM accessories WHERE item = $1;";
     let accessory: Option<(i32,)> = sqlx::query_as(QUERY)
-        .bind(&item)
+        .bind(item)
         .fetch_optional(database)
         .await
         .unwrap();
@@ -945,13 +929,13 @@ async fn status_id_or_insert(
 #[allow(dead_code)]
 async fn query_order(
     database: &Database,
-    id: i32,
+    sn: &str,
 ) -> Option<OrderInfo> {
     const QUERY: &str = r#"
         SELECT
-            o.id,
+            o.sn,
             o.issue_at,
-            d.name AS department,
+            d.store_name AS department,
             u1.username AS contact,
             o.customer_name,
             o.customer_phone,
@@ -985,11 +969,12 @@ async fn query_order(
             LEFT JOIN faults f1 ON f1.id = o.fault_id1
             LEFT JOIN faults f2 ON f2.id = o.fault_id2
             LEFT JOIN users u2 ON u2.id = o.servicer_id
-            LEFT JOIN users u3 ON u3.id = o.maintainer_id WHERE o.id = $1;
+            LEFT JOIN users u3 ON u3.id = o.maintainer_id
+        WHERE o.sn = $1;
     "#;
 
     match sqlx::query_as::<_, OrderInfo>(QUERY)
-        .bind(id)
+        .bind(sn)
         .fetch_optional(database)
         .await {
             Ok(res) => res,
@@ -1000,15 +985,70 @@ async fn query_order(
 #[allow(dead_code)]
 async fn query_raw_order(
     database: &Database,
-    id: i32,
+    sn: &str,
 ) -> Option<OrderRawInfo> {
-    const QUERY: &str = "SELECT * FROM orders WHERE id = $1;";
+    const QUERY: &str = "SELECT * FROM orders WHERE sn = $1;";
 
     match sqlx::query_as::<_, OrderRawInfo>(QUERY)
-        .bind(id)
+        .bind(sn)
         .fetch_optional(database)
         .await {
             Ok(res) => res,
             _ => None,
         }
 }
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct OrderSN(String);
+
+impl OrderSN {
+    async fn generate(
+        database: &Database,
+        department_id: Option<i32>,
+    ) -> Self {
+        /* (old) DB 22 12 21 20 17 07 0 => DD YY MM DD hh mm ss 0
+         * (new) DD DY MM DD hh XX XX 0
+         */
+        const QUERY: &str = r#"
+            SELECT
+                id, (SELECT shorten FROM departments WHERE id = $1)
+            FROM orders
+            ORDER BY id DESC LIMIT 1;
+        "#;
+        let res: Result<Option<(i32, String)>, _> = sqlx::query_as(QUERY)
+            .bind(department_id)
+            .fetch_optional(database)
+            .await;
+        let (next, shorten) = match res {
+            Ok(res) => {
+                res.map_or(
+                    (1, "NN".to_string()),
+                    |(i, s)| (i + 1, s))
+            },
+            Err(_) => (1, "NN".to_string()),
+        };
+
+        let now = Utc::now();
+
+        let res = format!("{shorten:0<3}{y}{mm:02}{dd:02}{hh:02}{next:04}0",
+                          y=(now.year() % 10),
+                          mm=now.month(),
+                          dd=now.day(),
+                          hh=now.hour());
+        Self(res)
+    }
+}
+
+/*#[test]
+fn test_format() {
+    let shorten = "NN".to_string();
+    let next = 99;
+    let now = Utc::now();
+    let res = format!("{shorten:0<3}{y}{mm:02}{dd:02}{hh:02}{next:04}0",
+                      y=(now.year() % 10),
+                      mm=now.month(),
+                      dd=now.day(),
+                      hh=now.hour());
+
+    assert_eq!(res, "NN0309080700990".to_string());
+}*/

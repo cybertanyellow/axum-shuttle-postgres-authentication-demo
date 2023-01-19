@@ -50,6 +50,8 @@ use dcare_order::{
 use department::{
     department_create, department_list_request,
     department_request, department_update, department_delete,
+    department_org_delete, department_org_list_request,
+    department_org_request,
 };
 
 type Templates = Arc<Tera>;
@@ -138,6 +140,10 @@ pub fn get_router(database: Database) -> Router {
             department::department_delete,
             department::department_update,
             department::department_create,
+
+            department::department_org_request,
+            department::department_org_list_request,
+            department::department_org_delete,
         ),
         components(
             schemas(
@@ -155,6 +161,8 @@ pub fn get_router(database: Database) -> Router {
                 department::DepartmentInfo,
                 department::DepartmentNew,
                 department::DepartmentUpdate,
+
+                department::DepartmentOrgsResponse, department::DepartmentOrgResponse,
             )
         ),
         modifiers(&SecurityAddon),
@@ -190,15 +198,20 @@ pub fn get_router(database: Database) -> Router {
         )
         .route("/api/v1/user", get(users_api).post(post_signup_api))
         .route(
-            "/api/v1/order/:id",
+            "/api/v1/order/:sn",
             get(order_request).put(order_update).delete(order_delete),
         )
         .route("/api/v1/order", get(order_list_request).post(order_create))
         .route(
-            "/api/v1/department/:id",
+            "/api/v1/department/:shorten",
             get(department_request).put(department_update).delete(department_delete),
         )
         .route("/api/v1/department", get(department_list_request).post(department_create))
+        .route(
+            "/api/v1/department/org/:shorten",
+            get(department_org_request).delete(department_org_delete),
+        )
+        .route("/api/v1/department/org", get(department_org_list_request))
         .layer(middleware::from_fn(move |req, next| {
             auth(req, next, middleware_database.clone())
         }))

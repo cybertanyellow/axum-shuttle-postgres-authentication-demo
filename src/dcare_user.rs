@@ -98,7 +98,7 @@ pub(crate) async fn query_user(account: &str, database: &Database) -> Option<Use
             u.username,
             u.worker_id,
             t.name title,
-            d.name department,
+            d.store_name department,
             phone,
             u.email,
             u.create_at,
@@ -503,7 +503,7 @@ pub(crate) async fn users_api(
             u.username,
             u.worker_id,
             t.name title,
-            d.name department,
+            d.store_name department,
             phone, u.email,
             u.create_at,
             u.login_at

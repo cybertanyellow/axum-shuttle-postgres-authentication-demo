@@ -37,6 +37,33 @@ use crate::{
 struct DepartmentOrg(String);
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+struct DepartmentOrgRaw {
+    id: i32,
+    create_at: DateTime<Utc>,
+    parent_id: Option<i32>,
+    child_id: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
+struct DepartmentOrgData {
+    current: Option<String>,
+    parents: Option<Vec<DepartmentOrg>>,
+    childs: Option<Vec<DepartmentOrg>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct DepartmentOrgResponse {
+    code: u16,
+    org: Option<DepartmentOrgData>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct DepartmentOrgsResponse {
+    code: u16,
+    orgs: Option<Vec<DepartmentOrgData>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 struct DepartmentDeleteRes {
     id: i32,
 }
@@ -463,29 +490,154 @@ pub(crate) async fn department_create(
     (StatusCode::OK, Json(resp)).into_response()
 }
 
+#[derive(Deserialize, IntoParams)]
+pub struct DepartmentOrgPair {
+    pub parent: Option<String>,
+    pub child: Option<String>,
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/department/org/{shorten}",
+    params(
+        ("shorten" = String, Path, description = "department ID to delete"),
+        DepartmentOrgPair,
+    ),
+    responses(
+        (status = 200, description = "delete success", body = ApiResponse, example = json!(ApiResponse::new(200, Some(String::from("success"))))),
+        (status = 404, description = "department not found, ", body = ApiResponse, example = json!(ApiResponse::new(404, Some(String::from("..."))))),
+        (status = 405, description = "permission deny", body = ApiResponse, example = json!(ApiResponse::new(405, Some(String::from("..."))))),
+    ),
+    security(
+        //(), // <-- make optional authentication
+        ("logined cookie/session-id" = [])
+    ),
+)]
+#[allow(dead_code)]
+pub(crate) async fn department_org_delete(
+    Extension(_current_user): Extension<AuthState>,
+    Extension(database): Extension<Database>,
+    Path(shorten): Path<String>,
+    pair: Query<DepartmentOrgPair>,
+) -> impl IntoResponse {
+    let mut resp = ApiResponse::new(200, None);
+
+    if let Some(ref parent) = pair.parent {
+        const QUERY: &str = r#"
+            DELETE from department_orgs
+            WHERE
+                child_id = (SELECT id FROM departments WHERE shorten = $1)
+                AND
+                parent_id = (SELECT id FROM departments WHERE shorten = $2)
+            RETURNING id;
+        "#;
+
+        if sqlx::query_as::<_, DepartmentDeleteRes>(QUERY)
+            .bind(&shorten)
+            .bind(parent)
+            .fetch_all(&database)
+            .await
+            .is_err()
+        {
+            resp.update(400, Some("delete department/org parent fail".to_string()));
+            return (StatusCode::OK, Json(resp)).into_response();
+        }
+        else {
+            resp.update(200, Some("delete department/org parent success".to_string()));
+        }
+    }
+    if let Some(ref child) = pair.child {
+        const QUERY: &str = r#"
+            DELETE from department_orgs
+            WHERE
+                child_id = (SELECT id FROM departments WHERE shorten = $1)
+                AND
+                parent_id = (SELECT id FROM departments WHERE shorten = $2)
+            RETURNING id;
+        "#;
+
+        if sqlx::query_as::<_, DepartmentDeleteRes>(QUERY)
+            .bind(child)
+            .bind(&shorten)
+            .fetch_all(&database)
+            .await
+            .is_err()
+        {
+            resp.update(400, Some("delete department/org child fail".to_string()));
+            return (StatusCode::OK, Json(resp)).into_response();
+        }
+        else {
+            resp.update(200, Some("delete department/org child success".to_string()));
+        }
+    }
+
+    (StatusCode::OK, Json(resp)).into_response()
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/department/org",
+    params(
+        Pagination
+    ),
+    responses(
+        (status = 200, description = "get department orgnization list", body = DepartmentOrgsResponse)
+    )
+)]
+pub(crate) async fn department_org_list_request(
+    Extension(_database): Extension<Database>,
+    //pagination: Option<Query<Pagination>>,
+) -> impl IntoResponse {
+    let resp = DepartmentOrgsResponse {
+        code: 400,
+        orgs: None,
+    };
+
+    //let (offset, entries) = Pagination::parse(pagination);
+    (StatusCode::OK, Json(resp)).into_response()
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/department/org/{shorten}",
+    params(
+        ("shorten" = String, Path, description = "department ID to get"),
+    ),
+    responses(
+        (status = 200, description = "get department orgnization list", body = DepartmentOrgsResponse)
+    )
+)]
+pub(crate) async fn department_org_request(
+    Extension(_current_user): Extension<AuthState>,
+    Extension(database): Extension<Database>,
+    Path(shorten): Path<String>,
+) -> impl IntoResponse {
+    let mut resp = DepartmentOrgResponse {
+        code: 400,
+        org: None,
+    };
+
+    resp.org = match query_raw_department(&database, &shorten).await {
+        Some(raw) => {
+            let parents = query_parent_shorten(&database, raw.id).await;
+            let childs = query_childs(&database, raw.id).await;
+            Some(DepartmentOrgData {
+                current: Some(shorten),
+                parents,
+                childs,
+            })
+        },
+        None => None,
+    };
+
+    (StatusCode::OK, Json(resp)).into_response()
+}
+
 #[allow(dead_code)]
 async fn query_department(
     database: &Database,
     shorten: &str,
 ) -> Option<DepartmentInfo> {
-    /*const QUERY: &str = r#"
-        SELECT
-            create_at,
-            update_at,
-            shorten,
-            name,
-            address
-        FROM departments
-        WHERE shorten = $1;
-    "#;
-
-    match sqlx::query_as::<_, DepartmentInfo>(QUERY)
-        .bind(shorten)
-        .fetch_optional(database)
-        .await {
-            Ok(res) => res,
-            _ => None,
-        }*/
     match query_raw_department(database, shorten)
         .await {
             Some(raw) => {
@@ -570,7 +722,7 @@ pub(crate) async fn department_name_or_insert(
     database: &Database,
     name: &str
 ) -> Result<i32> {
-    const QUERY: &str = "SELECT id FROM departments WHERE name = $1;";
+    const QUERY: &str = "SELECT id FROM departments WHERE store_name = $1;";
     let department: Option<(i32,)> = sqlx::query_as(QUERY)
         .bind(name)
         .fetch_optional(database)
@@ -584,7 +736,7 @@ pub(crate) async fn department_name_or_insert(
         const INSERT_QUERY: &str = r#"
             INSERT INTO departments (
                 shorten,
-                name
+                store_name
             ) VALUES (
                 $1,
                 $2
@@ -625,9 +777,11 @@ async fn query_parent_shorten(
     id: i32,
 ) -> Option<Vec<DepartmentOrg>> {
     const QUERY: &str = r#"
-        SELECT d.shorten FROM department_orgs o
-        WHERE o.child_id = $1
-        LEFT JOIN departments d ON d.id = o.parent_id;
+        SELECT
+            d.shorten
+        FROM department_orgs o
+        LEFT JOIN departments d ON d.id = o.parent_id
+        WHERE o.child_id = $1;
     "#;
 
     let row = sqlx::query_as::<_, DepartmentOrg>(QUERY)
@@ -680,8 +834,8 @@ async fn query_childs(
     }*/
     const QUERY: &str = r#"
         SELECT d.shorten FROM department_orgs o
-        WHERE o.parent_id = $1
-        LEFT JOIN departments d ON d.id = o.child_id;
+        LEFT JOIN departments d ON d.id = o.child_id
+        WHERE o.parent_id = $1;
     "#;
 
     let row = sqlx::query_as::<_, DepartmentOrg>(QUERY)
@@ -781,6 +935,5 @@ async fn department_org_update_parents(
             _ => {
             }*/
     }
-
-    Err(anyhow!("TODO"))
+    Ok(())
 }

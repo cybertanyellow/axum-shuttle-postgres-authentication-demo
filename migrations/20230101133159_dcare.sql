@@ -1,14 +1,15 @@
-DROP TABLE IF EXISTS sessions;
-DROP TABLE IF EXISTS order_histories;
-DROP TABLE IF EXISTS orders;
-DROP TABLE IF EXISTS users;
-DROP TABLE IF EXISTS titles;
-DROP TABLE IF EXISTS department_orgs;
-DROP TABLE IF EXISTS departments;
-DROP TABLE IF EXISTS models;
-DROP TABLE IF EXISTS accessories;
-DROP TABLE IF EXISTS faults;
-DROP TABLE IF EXISTS status;
+-- DROP TABLE IF EXISTS sessions;
+-- DROP TABLE IF EXISTS order_histories;
+-- DROP TABLE IF EXISTS orders;
+-- DROP TABLE IF EXISTS users;
+-- DROP TABLE IF EXISTS titles;
+-- DROP TABLE IF EXISTS department_orgs;
+-- DROP TABLE IF EXISTS departments;
+-- DROP TABLE IF EXISTS department_types;
+-- DROP TABLE IF EXISTS models;
+-- DROP TABLE IF EXISTS accessories;
+-- DROP TABLE IF EXISTS faults;
+-- DROP TABLE IF EXISTS status;
 
 -- 職稱
 CREATE TABLE IF NOT EXISTS titles (
@@ -20,6 +21,8 @@ CREATE TABLE IF NOT EXISTS department_types (
     id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     name text NOT NULL UNIQUE           -- 維保中心,營業點,總部,其他
 );
+INSERT INTO department_types ( name ) VALUES ( '總部' )
+ON CONFLICT (name) DO NOTHING;
 
 -- 部門(涵 門市&維保中心)
 CREATE TABLE IF NOT EXISTS departments (
@@ -34,9 +37,15 @@ CREATE TABLE IF NOT EXISTS departments (
     address text,                       -- 門市地址
     type_id integer REFERENCES department_types (id) ON DELETE CASCADE
 );
+INSERT INTO departments 
+( shorten, store_name, type_id )
+VALUES ( 'ADM', '總部', ( SELECT id FROM department_types WHERE name = '總部' ) )
+ON CONFLICT (shorten) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS department_orgs (
     id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    create_at timestamptz NOT NULL DEFAULT NOW(),   -- 創建時間
+
     parent_id integer REFERENCES departments (id) ON DELETE CASCADE,
     child_id integer REFERENCES departments (id) ON DELETE CASCADE
 );
@@ -98,7 +107,7 @@ CREATE TABLE IF NOT EXISTS orders (
 
     -- for future
     issuer_id integer REFERENCES users (id) ON DELETE CASCADE, -- 敲單人員
-    number text,
+    sn text NOT NULL UNIQUE, -- 工單號
 
     department_id integer REFERENCES departments (id) ON DELETE CASCADE, -- 收件地點
     contact_id integer REFERENCES users (id) ON DELETE CASCADE,          -- 直服專員
