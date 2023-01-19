@@ -1,15 +1,15 @@
--- DROP TABLE IF EXISTS sessions;
--- DROP TABLE IF EXISTS order_histories;
--- DROP TABLE IF EXISTS orders;
--- DROP TABLE IF EXISTS users;
--- DROP TABLE IF EXISTS titles;
--- DROP TABLE IF EXISTS department_orgs;
--- DROP TABLE IF EXISTS departments;
--- DROP TABLE IF EXISTS department_types;
--- DROP TABLE IF EXISTS models;
--- DROP TABLE IF EXISTS accessories;
--- DROP TABLE IF EXISTS faults;
--- DROP TABLE IF EXISTS status;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS order_histories;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS titles;
+DROP TABLE IF EXISTS department_orgs;
+DROP TABLE IF EXISTS departments;
+DROP TABLE IF EXISTS department_types;
+DROP TABLE IF EXISTS models;
+DROP TABLE IF EXISTS accessories;
+DROP TABLE IF EXISTS faults;
+DROP TABLE IF EXISTS status;
 
 -- 職稱
 CREATE TABLE IF NOT EXISTS titles (
