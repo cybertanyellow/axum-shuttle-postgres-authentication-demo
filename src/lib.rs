@@ -145,16 +145,15 @@ pub fn get_router(database: Database) -> Router {
                 ApiResponse,
 
                 dcare_order::OrdersResponse, dcare_order::OrderResponse,
-                dcare_order::OrderInfo,
-                dcare_order::OrderNew,
-                dcare_order::OrderUpdate,
+                dcare_order::OrderInfo, dcare_order::OrderSummary,
+                dcare_order::OrderNew, dcare_order::OrderUpdate,
 
                 department::DepartmentsResponse, department::DepartmentResponse,
-                department::DepartmentInfo,
-                department::DepartmentNew,
-                department::DepartmentUpdate,
+                department::DepartmentInfo, department::DepartmentSummary,
+                department::DepartmentNew, department::DepartmentUpdate,
 
                 department::DepartmentOrgsResponse, department::DepartmentOrgResponse,
+                department::DepartmentOrgData,
             )
         ),
         modifiers(&SecurityAddon),

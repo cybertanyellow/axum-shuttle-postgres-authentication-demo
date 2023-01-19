@@ -67,7 +67,6 @@ pub struct OrderRawInfo {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct OrderInfo {
-    //id: i32,
     sn: Option<String>,
     issue_at: DateTime<Utc>,
 
@@ -103,13 +102,14 @@ pub struct OrderInfo {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct OrderUpdate {
+    #[schema(example = "department's store_name")]
     department: Option<String>,
     customer_address: Option<String>,
 
     accessory1: Option<String>,
     accessory2: Option<String>,
     accessory_other: Option<String>,
-    #[schema(example = json!({"storage": [1], "nbits": 8}))]
+    #[schema(example = json!({"storage": [2], "nbits": 8}))]
     appearance: Option<BitVec>,
     appearance_other: Option<String>,
     service: Option<String>,
@@ -122,13 +122,17 @@ pub struct OrderUpdate {
     prepaid_free: Option<i32>,
 
     status: Option<String>,
+    #[schema(example = "user's account")]
     servicer: Option<String>,
+    #[schema(example = "user's account")]
     maintainer: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct OrderNew {
+    #[schema(example = "department's store_name")]
     department: Option<String>,
+    #[schema(example = "user's account")]
     contact: Option<String>,
     customer_name: Option<String>,
     customer_phone: String,
@@ -137,10 +141,12 @@ pub struct OrderNew {
     brand: String,
     model: Option<String>,
 
+    #[schema(example = "2023-01-18")]
     purchase_at: Option<NaiveDate>,
     accessory1: Option<String>,
     accessory2: Option<String>,
     accessory_other: Option<String>,
+    #[schema(example = json!({"storage": [1], "nbits": 8}))]
     appearance: BitVec,
     appearance_other: Option<String>,
     service: Option<String>,
@@ -153,7 +159,9 @@ pub struct OrderNew {
     prepaid_free: Option<i32>,
 
     status: String,
+    #[schema(example = "user's account")]
     servicer: Option<String>,
+    #[schema(example = "user's account")]
     maintainer: Option<String>,
 }
 
@@ -163,10 +171,27 @@ pub struct OrderResponse {
     order: Option<OrderInfo>,
 }
 
+#[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+pub struct OrderSummary {
+    sn: Option<String>,
+    issue_at: DateTime<Utc>,
+
+    department: Option<String>,
+    contact: Option<String>,
+    customer_name: Option<String>,
+
+    service: Option<String>,
+    cost: Option<i32>,
+
+    status: String,
+    servicer: Option<String>,
+    maintainer: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct OrdersResponse {
     code: u16,
-    orders: Option<Vec<OrderInfo>>,
+    orders: Option<Vec<OrderSummary>>,
 }
 
 #[utoipa::path(
@@ -516,42 +541,21 @@ pub(crate) async fn order_list_request(
             d.store_name AS department,
             u1.username AS contact,
             o.customer_name,
-            o.customer_phone,
-            o.customer_address,
-            m.brand,
-            m.model,
-            o.purchase_at,
-            s1.item AS accessory1,
-            s2.item AS accessory2,
-            o.accessory_other,
-            o.appearance,
-            o.appearance_other,
             o.service,
-            f1.item AS fault1,
-            f2.item AS fault2,
-            o.fault_other,
-            o.photo_url,
-            o.remark,
             o.cost,
-            o.prepaid_free,
             s.flow status,
             u2.username AS servicer,
             u3.username AS maintainer
         FROM orders o
-            LEFT JOIN models m ON m.id = o.model_id
             LEFT JOIN departments d ON d.id = o.department_id
             LEFT JOIN status s ON s.id = o.status_id
             LEFT JOIN users u1 ON u1.id = o.contact_id
-            LEFT JOIN accessories s1 ON s1.id = o.accessory_id1
-            LEFT JOIN accessories s2 ON s2.id = o.accessory_id2
-            LEFT JOIN faults f1 ON f1.id = o.fault_id1
-            LEFT JOIN faults f2 ON f2.id = o.fault_id2
             LEFT JOIN users u2 ON u2.id = o.servicer_id
             LEFT JOIN users u3 ON u3.id = o.maintainer_id
         LIMIT $1 OFFSET $2;
     "#;
 
-    if let Ok(orders) = sqlx::query_as::<_, OrderInfo>(QUERY)
+    if let Ok(orders) = sqlx::query_as::<_, OrderSummary>(QUERY)
         .bind(entries)
         .bind(offset)
         .fetch_all(&database)

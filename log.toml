@@ -403,6 +403,31 @@ postgres=#
   }
 }
 
+curl -H 'Content-Type: application/json' --cookie 'user_token=61005067848981703473443886197130317173' http://127.0.0.1:8000/api/v1/department/org/BM\?child=JSHall2 -X DELETE
+{"code":200,"message":"delete department/org child success"}⏎                                                                                                                                   yellow@LAPTOP-AA8VDMLU ~/s/axum-shuttle-postgres-authentication-demo (dcare-rest-service)>
+curl -H 'Content-Type: application/json' --cookie 'user_token=61005067848981703473443886197130317173' http://127.0.0.1:8000/api/v1/department/org/BM -s | jq
+{
+    "code": 400,
+    "org": {
+        "current": "BM",
+        "parents": [
+            "ADM"
+        ],
+        "childs": []
+    }
+}
+
+curl -H 'Content-Type: application/json' --cookie 'user_token=61005067848981703473443886197130317173' http://127.0.0.1:8000/api/v1/department/org/JSHall2 -s | jq
+{
+    "code": 400,
+    "org": {
+        "current": "JSHall2",
+        "parents": [],
+        "childs": []
+    }
+}
+
+
 
 ## users
 
@@ -455,29 +480,8 @@ postgres=#
       "department": null,
       "contact": null,
       "customer_name": null,
-      "customer_phone": "phone1",
-      "customer_address": null,
-      "brand": "brand1",
-      "model": "unknown",
-      "purchase_at": null,
-      "accessory1": null,
-      "accessory2": null,
-      "accessory_other": null,
-      "appearance": {
-        "storage": [
-          2
-        ],
-        "nbits": 8
-      },
-      "appearance_other": null,
       "service": null,
-      "fault1": null,
-      "fault2": null,
-      "fault_other": null,
-      "photo_url": null,
-      "remark": null,
       "cost": null,
-      "prepaid_free": null,
       "status": "check",
       "servicer": null,
       "maintainer": null
@@ -525,10 +529,7 @@ postgres=#
 
 └─> curl -H 'Content-Type: application/json' --cookie 'user_token=254971077791281876651467273292106090338' http://127.0.0.1:8000/api/v1/order/NN0301190900010 -s -X PUT -d '{"department":"taiwan cloud forest donan","status":"cleaning"}'
 {"code":200,"message":"order update success - history1"}⏎
-┌─────────────────────────────────────────
-│axum-shuttle-postgres-authentication-demo via 🦀 v1.66.0 is 📦 v0.1.0 on  dcare-rest-service
-└─>
-┌─────────────────────────────────────────
+
 │axum-shuttle-postgres-authentication-demo via 🦀 v1.66.0 is 📦 v0.1.0 on  dcare-rest-service
 └─> curl -H 'Content-Type: application/json' --cookie 'user_token=254971077791281876651467273292106090338' http://127.0.0.1:8000/api/v1/order/NN0301190900010 -s | jq
 {

@@ -39,7 +39,7 @@ struct DepartmentOrgRaw {
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
-struct DepartmentOrgData {
+pub struct DepartmentOrgData {
     current: Option<String>,
     parents: Option<Vec<DepartmentOrg>>,
     childs: Option<Vec<DepartmentOrg>>,
@@ -109,23 +109,31 @@ pub struct DepartmentInfo {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct DepartmentUpdate {
+    #[schema(example = "ADM, BM, ...")]
     shorten: Option<String>,
+    #[schema(example = "full store(department) name")]
     store_name: Option<String>,
     owner: Option<String>,
     telephone: Option<String>,
     address: Option<String>,
+    #[schema(example = "門市,維保中心, ...")]
     type_id: Option<String>,
+    #[schema(example = r#"["BM"]"#)]
     parents: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct DepartmentNew {
+    #[schema(example = "ADM, BM, ...")]
     shorten: String,
+    #[schema(example = "full store(department) name")]
     store_name: Option<String>,
     owner: Option<String>,
     telephone: Option<String>,
     address: Option<String>,
+    #[schema(example = "門市,維保中心, ...")]
     type_id: Option<String>,
+    #[schema(example = r#"["BM"]"#)]
     parents: Option<Vec<String>>,
 }
 
@@ -215,14 +223,6 @@ pub(crate) async fn department_update(
     let address = department.address.or(orig.address);
     let owner = department.owner.or(orig.owner);
     let telephone = department.telephone.or(orig.telephone);
-    /*TODO let parent_id = match department.parent {
-        None => orig.parent_id,
-        Some(p) => {
-            query_raw_department(&database, &p)
-                .await
-                .map_or(None, |v| Some(v.id))
-        },
-    };*/
     let type_id = match department.type_id {
         Some(type_id) => match department_type_or_insert(&database, &type_id).await {
             Ok(id) => Some(id),
@@ -284,7 +284,7 @@ pub(crate) async fn department_update(
     delete,
     path = "/api/v1/department/{shorten}",
     params(
-        ("shorten" = String, Path, description = "department ID to delete")
+        ("shorten" = String, Path, description = "department shorten to delete")
     ),
     responses(
         (status = 200, description = "delete success", body = ApiResponse, example = json!(ApiResponse::new(200, Some(String::from("success"))))),
