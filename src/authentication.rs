@@ -204,10 +204,7 @@ pub(crate) async fn signup2(
     email: &str,
 ) -> Result<SessionToken, SignupError> {
     fn valid_username(account: &str) -> bool {
-        (1..128).contains(&account.len())
-            && account
-                .chars()
-                .all(|c| c.is_ascii_graphic())
+        (1..128).contains(&account.len()) && account.chars().all(|c| c.is_ascii_graphic())
     }
 
     if !valid_username(account) {
@@ -271,7 +268,8 @@ pub(crate) async fn login(
     account: &str,
     password: &str,
 ) -> Result<(SessionToken, BitVec), LoginError> {
-    const LOGIN_QUERY: &str = "SELECT id, password, permission FROM users WHERE users.account = $1;";
+    const LOGIN_QUERY: &str =
+        "SELECT id, password, permission FROM users WHERE users.account = $1;";
 
     let row: Option<(i32, String, BitVec)> = sqlx::query_as(LOGIN_QUERY)
         .bind(account)
@@ -309,9 +307,7 @@ pub(crate) async fn delete_user(auth_state: AuthState) {
         .unwrap();
 }
 
-pub(crate) async fn delete_user2(
-    database: &Database, user: &str
-) -> Result<()> {
+pub(crate) async fn delete_user2(database: &Database, user: &str) -> Result<()> {
     const DELETE_QUERY: &str = "DELETE FROM users WHERE account = $1;";
 
     sqlx::query(DELETE_QUERY)

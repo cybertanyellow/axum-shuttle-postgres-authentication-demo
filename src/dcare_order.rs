@@ -8,27 +8,18 @@ use axum::{
 
 use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
-use chrono::{DateTime, Utc, NaiveDate, Datelike, Timelike};
+use chrono::{DateTime, Datelike, NaiveDate, Timelike, Utc};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 //use serde_json::json;
-use tracing::{
-    //debug, info,
-    error,
-};
+use tracing::error;
 use utoipa::{IntoParams, ToSchema};
 
-use crate::authentication::{
-    //CurrentUser,
-    AuthState,
-};
+use crate::authentication::AuthState;
 
-use crate::errors::NotLoggedIn;
-use crate::{
-    Database, Random,
-    Pagination, ApiResponse,
-};
 use crate::dcare_user::query_user_id;
 use crate::department::department_name_or_insert;
+use crate::errors::NotLoggedIn;
+use crate::{ApiResponse, Database, Pagination, Random};
 
 type Price = i32;
 
@@ -73,7 +64,6 @@ pub struct OrderRawInfo {
     servicer_id: Option<i32>,
     maintainer_id: Option<i32>,
 }
-
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
 pub struct OrderInfo {
@@ -285,8 +275,7 @@ pub(crate) async fn order_update(
         None => orig.accessory_id2,
     };
 
-    let appearance = order.appearance
-        .or(Some(orig.appearance));
+    let appearance = order.appearance.or(Some(orig.appearance));
 
     let appearance_other = if order.appearance_other.is_some() {
         order.appearance_other
@@ -319,14 +308,12 @@ pub(crate) async fn order_update(
     };
 
     let status_id = match order.status {
-        Some(ref status) => {
-            match status_id_or_insert(&database, status).await {
-                Ok(id) => Some(id),
-                Err(e) => {
-                    resp.update(500, Some(format!("{e}")));
-                    error!("{:?}", &resp);
-                    return (StatusCode::OK, Json(resp)).into_response();
-                }
+        Some(ref status) => match status_id_or_insert(&database, status).await {
+            Ok(id) => Some(id),
+            Err(e) => {
+                resp.update(500, Some(format!("{e}")));
+                error!("{:?}", &resp);
+                return (StatusCode::OK, Json(resp)).into_response();
             }
         },
         None => orig.status_id,
@@ -362,20 +349,13 @@ pub(crate) async fn order_update(
         orig.customer_address
     };
 
-    let accessory_other = order.accessory_other
-        .or(orig.accessory_other);
-    let service = order.service
-        .or(orig.service);
-    let fault_other = order.fault_other
-        .or(orig.fault_other);
-    let photo_url = order.photo_url
-        .or(orig.photo_url);
-    let remark = order.remark
-        .or(orig.remark);
-    let cost = order.cost
-        .or(orig.cost);
-    let prepaid_free = order.prepaid_free
-        .or(orig.prepaid_free);
+    let accessory_other = order.accessory_other.or(orig.accessory_other);
+    let service = order.service.or(orig.service);
+    let fault_other = order.fault_other.or(orig.fault_other);
+    let photo_url = order.photo_url.or(orig.photo_url);
+    let remark = order.remark.or(orig.remark);
+    let cost = order.cost.or(orig.cost);
+    let prepaid_free = order.prepaid_free.or(orig.prepaid_free);
 
     const UPDATE_QUERY: &str = r#"
         WITH order_updated AS (
@@ -440,7 +420,7 @@ pub(crate) async fn order_update(
     match fetch_one {
         Ok((id,)) => {
             resp.update(200, Some(format!("order update success - history{id}")));
-        },
+        }
         Err(e) => {
             resp.update(500, Some(format!("{e}")));
             error!("{:?}", &resp);
@@ -696,7 +676,7 @@ pub(crate) async fn order_create(
         }
     };
 
-    let servicer_id = if let Some(ref servicer) = order.servicer{
+    let servicer_id = if let Some(ref servicer) = order.servicer {
         match query_user_id(&database, servicer).await {
             Some(id) => Some(id),
             None => {
@@ -784,7 +764,7 @@ pub(crate) async fn order_create(
     match fetch_one {
         Ok((id,)) => {
             resp.update(200, Some(format!("order{id} create success")));
-        },
+        }
         Err(e) => {
             resp.update(500, Some(format!("{e}")));
             error!("{:?}", &resp);
@@ -831,11 +811,7 @@ async fn model_id_or_insert(
     }
 }
 
-async fn accessory_id_or_insert(
-    database: &Database,
-    item: &str,
-    price: Price,
-) -> Result<i32> {
+async fn accessory_id_or_insert(database: &Database, item: &str, price: Price) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM accessories WHERE item = $1;";
     let accessory: Option<(i32,)> = sqlx::query_as(QUERY)
         .bind(item)
@@ -865,11 +841,7 @@ async fn accessory_id_or_insert(
     }
 }
 
-async fn fault_id_or_insert(
-    database: &Database,
-    item: &str,
-    cost: Price,
-) -> Result<i32> {
+async fn fault_id_or_insert(database: &Database, item: &str, cost: Price) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM faults WHERE item = $1;";
     let f_id: Option<(i32,)> = sqlx::query_as(QUERY)
         .bind(item)
@@ -899,10 +871,7 @@ async fn fault_id_or_insert(
     }
 }
 
-async fn status_id_or_insert(
-    database: &Database,
-    flow: &str,
-) -> Result<i32> {
+async fn status_id_or_insert(database: &Database, flow: &str) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM status WHERE flow = $1;";
     let f_id: Option<(i32,)> = sqlx::query_as(QUERY)
         .bind(flow)
@@ -927,10 +896,7 @@ async fn status_id_or_insert(
 }
 
 #[allow(dead_code)]
-async fn query_order(
-    database: &Database,
-    sn: &str,
-) -> Option<OrderInfo> {
+async fn query_order(database: &Database, sn: &str) -> Option<OrderInfo> {
     const QUERY: &str = r#"
         SELECT
             o.sn,
@@ -976,36 +942,32 @@ async fn query_order(
     match sqlx::query_as::<_, OrderInfo>(QUERY)
         .bind(sn)
         .fetch_optional(database)
-        .await {
-            Ok(res) => res,
-            _ => None,
-        }
+        .await
+    {
+        Ok(res) => res,
+        _ => None,
+    }
 }
 
 #[allow(dead_code)]
-async fn query_raw_order(
-    database: &Database,
-    sn: &str,
-) -> Option<OrderRawInfo> {
+async fn query_raw_order(database: &Database, sn: &str) -> Option<OrderRawInfo> {
     const QUERY: &str = "SELECT * FROM orders WHERE sn = $1;";
 
     match sqlx::query_as::<_, OrderRawInfo>(QUERY)
         .bind(sn)
         .fetch_optional(database)
-        .await {
-            Ok(res) => res,
-            _ => None,
-        }
+        .await
+    {
+        Ok(res) => res,
+        _ => None,
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct OrderSN(String);
 
 impl OrderSN {
-    async fn generate(
-        database: &Database,
-        department_id: Option<i32>,
-    ) -> Self {
+    async fn generate(database: &Database, department_id: Option<i32>) -> Self {
         /* (old) DB 22 12 21 20 17 07 0 => DD YY MM DD hh mm ss 0
          * (new) DD DY MM DD hh XX XX 0
          */
@@ -1020,21 +982,19 @@ impl OrderSN {
             .fetch_optional(database)
             .await;
         let (next, shorten) = match res {
-            Ok(res) => {
-                res.map_or(
-                    (1, "NN".to_string()),
-                    |(i, s)| (i + 1, s))
-            },
+            Ok(res) => res.map_or((1, "NN".to_string()), |(i, s)| (i + 1, s)),
             Err(_) => (1, "NN".to_string()),
         };
 
         let now = Utc::now();
 
-        let res = format!("{shorten:0<3}{y}{mm:02}{dd:02}{hh:02}{next:04}0",
-                          y=(now.year() % 10),
-                          mm=now.month(),
-                          dd=now.day(),
-                          hh=now.hour());
+        let res = format!(
+            "{shorten:0<3}{y}{mm:02}{dd:02}{hh:02}{next:04}0",
+            y = (now.year() % 10),
+            mm = now.month(),
+            dd = now.day(),
+            hh = now.hour()
+        );
         Self(res)
     }
 }

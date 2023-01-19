@@ -11,27 +11,21 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 //use serde_json::json;
 use tracing::{
+    error,
     //debug,
     info,
-    error,
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 //use sqlx::{
-    //Row,
-    //postgres::PgRow,
+//Row,
+//postgres::PgRow,
 //};
 
-use crate::authentication::{
-    //CurrentUser,
-    AuthState,
-};
+use crate::authentication::AuthState;
 
 use crate::errors::NotLoggedIn;
-use crate::{
-    Database,
-    Pagination, ApiResponse,
-};
+use crate::{ApiResponse, Database, Pagination};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 struct DepartmentOrg(String);
@@ -167,12 +161,9 @@ pub(crate) async fn department_request(
         department: None,
     };
 
-    match query_department(&database, &shorten).await {
-        Some(o) => {
-            resp.code = 200;
-            resp.department = Some(o);
-        },
-        None => {},
+    if let Some(o) = query_department(&database, &shorten).await {
+        resp.code = 200;
+        resp.department = Some(o);
     }
     (StatusCode::OK, Json(resp)).into_response()
 }
@@ -219,16 +210,11 @@ pub(crate) async fn department_update(
         }
     };
 
-    let shorten = department.shorten
-        .or(Some(orig.shorten));
-    let store_name = department.store_name
-        .or(orig.store_name);
-    let address = department.address
-        .or(orig.address);
-    let owner = department.owner
-        .or(orig.owner);
-    let telephone = department.telephone
-        .or(orig.telephone);
+    let shorten = department.shorten.or(Some(orig.shorten));
+    let store_name = department.store_name.or(orig.store_name);
+    let address = department.address.or(orig.address);
+    let owner = department.owner.or(orig.owner);
+    let telephone = department.telephone.or(orig.telephone);
     /*TODO let parent_id = match department.parent {
         None => orig.parent_id,
         Some(p) => {
@@ -275,24 +261,23 @@ pub(crate) async fn department_update(
         Ok((id,)) => {
             let org_done = match department.parents {
                 Some(ref parents) => {
-                    department_org_update_parents(
-                        &database, orig.id, parents)
-                        .await
-                },
+                    department_org_update_parents(&database, orig.id, parents).await
+                }
                 None => Ok(()),
             };
             if org_done.is_ok() {
                 resp.update(200, Some(format!("department{id} update success")));
             } else {
-                resp.update(400, Some(format!("department organization update fail")));
+                resp.update(400, Some("department organization update fail".to_string()));
             }
-        },
+        }
         Err(e) => {
             resp.update(500, Some(format!("{e}")));
             error!("{:?}", &resp);
         }
     }
-    return (StatusCode::OK, Json(resp)).into_response();
+
+    (StatusCode::OK, Json(resp)).into_response()
 }
 
 #[utoipa::path(
@@ -334,22 +319,21 @@ pub(crate) async fn department_delete(
         }
     };
 
-    if query_childs(&database, orig.id)
-        .await
-        .is_some() {
-            resp.update(400, Some("denied by child departments".to_string()));
-            error!("{:?}", &resp);
-            return (StatusCode::OK, Json(resp)).into_response();
+    if query_childs(&database, orig.id).await.is_some() {
+        resp.update(400, Some("denied by child departments".to_string()));
+        error!("{:?}", &resp);
+        return (StatusCode::OK, Json(resp)).into_response();
     }
 
     const QUERY: &str = r#"
         DELETE from departments WHERE shorten = $1
         RETURNING id;"#;
 
-    if let Ok(_) = sqlx::query_as::<_, DepartmentDeleteRes>(QUERY)
+    if sqlx::query_as::<_, DepartmentDeleteRes>(QUERY)
         .bind(&shorten)
         .fetch_all(&database)
         .await
+        .is_ok()
     {
         resp.update(200, Some("delete success".to_string()));
     }
@@ -438,13 +422,6 @@ pub(crate) async fn department_create(
         None => None,
     };
 
-    /*let parent_id = match department.parent {
-        Some(p_shorten) => {
-            query_parent_id(&database, &p_shorten).await
-        },
-        None => None,
-    };*/
-
     const INSERT_QUERY: &str = r#"
         INSERT INTO departments (
             shorten,
@@ -469,11 +446,7 @@ pub(crate) async fn department_create(
     match fetch_one {
         Ok((id,)) => {
             let org_done = match department.parents {
-                Some(ref parents) => {
-                    department_org_update_parents(
-                        &database, id, parents)
-                        .await
-                },
+                Some(ref parents) => department_org_update_parents(&database, id, parents).await,
                 None => Ok(()),
             };
             if org_done.is_ok() {
@@ -481,7 +454,7 @@ pub(crate) async fn department_create(
             } else {
                 resp.update(400, Some("department organization update fail".to_string()));
             }
-        },
+        }
         Err(e) => {
             resp.update(500, Some(format!("{e}")));
             error!("{:?}", &resp);
@@ -541,9 +514,11 @@ pub(crate) async fn department_org_delete(
         {
             resp.update(400, Some("delete department/org parent fail".to_string()));
             return (StatusCode::OK, Json(resp)).into_response();
-        }
-        else {
-            resp.update(200, Some("delete department/org parent success".to_string()));
+        } else {
+            resp.update(
+                200,
+                Some("delete department/org parent success".to_string()),
+            );
         }
     }
     if let Some(ref child) = pair.child {
@@ -565,8 +540,7 @@ pub(crate) async fn department_org_delete(
         {
             resp.update(400, Some("delete department/org child fail".to_string()));
             return (StatusCode::OK, Json(resp)).into_response();
-        }
-        else {
+        } else {
             resp.update(200, Some("delete department/org child success".to_string()));
         }
     }
@@ -626,7 +600,7 @@ pub(crate) async fn department_org_request(
                 parents,
                 childs,
             })
-        },
+        }
         None => None,
     };
 
@@ -634,60 +608,51 @@ pub(crate) async fn department_org_request(
 }
 
 #[allow(dead_code)]
-async fn query_department(
-    database: &Database,
-    shorten: &str,
-) -> Option<DepartmentInfo> {
-    match query_raw_department(database, shorten)
-        .await {
-            Some(raw) => {
-                let department_type = match raw.type_id {
-                    Some(id) => {
-                        query_department_type(database, id).await
-                            .map(|t| t.name)
-                    },
-                    None => None,
-                };
+async fn query_department(database: &Database, shorten: &str) -> Option<DepartmentInfo> {
+    match query_raw_department(database, shorten).await {
+        Some(raw) => {
+            let department_type = match raw.type_id {
+                Some(id) => query_department_type(database, id).await.map(|t| t.name),
+                None => None,
+            };
 
-                let parents = query_parent_shorten(database, raw.id).await;
-                let childs = query_childs(database, raw.id).await;
-                Some(DepartmentInfo {
-                    create_at: raw.create_at,
-                    update_at: raw.update_at,
-                    shorten: raw.shorten,
-                    store_name: raw.store_name,
-                    owner: raw.owner,
-                    telephone: raw.telephone,
-                    address: raw.address,
-                    type_id: department_type,
-                    parents,
-                    childs,
-                })
-            },
-            None => None,
+            let parents = query_parent_shorten(database, raw.id).await;
+            let childs = query_childs(database, raw.id).await;
+            Some(DepartmentInfo {
+                create_at: raw.create_at,
+                update_at: raw.update_at,
+                shorten: raw.shorten,
+                store_name: raw.store_name,
+                owner: raw.owner,
+                telephone: raw.telephone,
+                address: raw.address,
+                type_id: department_type,
+                parents,
+                childs,
+            })
         }
+        None => None,
+    }
 }
 
 #[allow(dead_code)]
-async fn query_raw_department(
-    database: &Database,
-    shorten: &str,
-) -> Option<DepartmentRawInfo> {
+async fn query_raw_department(database: &Database, shorten: &str) -> Option<DepartmentRawInfo> {
     const QUERY: &str = "SELECT * FROM departments WHERE shorten = $1;";
 
     match sqlx::query_as::<_, DepartmentRawInfo>(QUERY)
         .bind(shorten)
         .fetch_optional(database)
-        .await {
-            Ok(res) => res,
-            _ => None,
-        }
+        .await
+    {
+        Ok(res) => res,
+        _ => None,
+    }
 }
 
 #[allow(dead_code)]
 pub(crate) async fn department_shorten_or_insert(
     database: &Database,
-    shorten: &str
+    shorten: &str,
 ) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM departments WHERE shorten = $1;";
     let department: Option<(i32,)> = sqlx::query_as(QUERY)
@@ -718,10 +683,7 @@ pub(crate) async fn department_shorten_or_insert(
     }
 }
 
-pub(crate) async fn department_name_or_insert(
-    database: &Database,
-    name: &str
-) -> Result<i32> {
+pub(crate) async fn department_name_or_insert(database: &Database, name: &str) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM departments WHERE store_name = $1;";
     let department: Option<(i32,)> = sqlx::query_as(QUERY)
         .bind(name)
@@ -756,26 +718,21 @@ pub(crate) async fn department_name_or_insert(
 }
 
 #[allow(dead_code)]
-async fn query_department_type(
-    database: &Database,
-    id: i32,
-) -> Option<DepartmentTypeRaw> {
+async fn query_department_type(database: &Database, id: i32) -> Option<DepartmentTypeRaw> {
     const QUERY: &str = "SELECT * FROM department_types WHERE id = $1;";
 
     match sqlx::query_as::<_, DepartmentTypeRaw>(QUERY)
         .bind(id)
         .fetch_optional(database)
-        .await {
-            Ok(res) => res,
-            _ => None,
-        }
+        .await
+    {
+        Ok(res) => res,
+        _ => None,
+    }
 }
 
 #[allow(dead_code)]
-async fn query_parent_shorten(
-    database: &Database,
-    id: i32,
-) -> Option<Vec<DepartmentOrg>> {
+async fn query_parent_shorten(database: &Database, id: i32) -> Option<Vec<DepartmentOrg>> {
     const QUERY: &str = r#"
         SELECT
             d.shorten
@@ -795,10 +752,7 @@ async fn query_parent_shorten(
 }
 
 #[allow(dead_code)]
-async fn query_parent_id(
-    database: &Database,
-    shorten: &str,
-) -> Option<i32> {
+async fn query_parent_id(database: &Database, shorten: &str) -> Option<i32> {
     const QUERY: &str = "SELECT id FROM departments WHERE shorten = $1;";
 
     let row: Result<(String,), _> = sqlx::query_as(QUERY)
@@ -808,18 +762,14 @@ async fn query_parent_id(
     match row {
         Ok(r) => {
             info!("TODO, check String-{:?} to integer?", r.0);
-            r.0.parse::<i32>()
-                .map_or(None, |i| Some(i))
-        },
+            r.0.parse::<i32>().map_or(None, |i| Some(i))
+        }
         Err(_) => None,
     }
 }
 
 #[allow(dead_code)]
-async fn query_childs(
-    database: &Database,
-    pid: i32,
-) -> Option<Vec<DepartmentOrg>> {
+async fn query_childs(database: &Database, pid: i32) -> Option<Vec<DepartmentOrg>> {
     /*const QUERY: &str = "SELECT shorten FROM departments WHERE parent_id = $1;";
 
     match sqlx::query(QUERY).bind(pid).fetch_all(database).await {
@@ -849,10 +799,7 @@ async fn query_childs(
 }
 
 #[allow(dead_code)]
-pub(crate) async fn department_type_or_insert(
-    database: &Database,
-    name: &str
-) -> Result<i32> {
+pub(crate) async fn department_type_or_insert(database: &Database, name: &str) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM department_types WHERE name = $1;";
     let d_type: Option<(i32,)> = sqlx::query_as(QUERY)
         .bind(name)
@@ -907,7 +854,7 @@ async fn department_org_update_parents(
             .await;
 
         if let Ok(Some(_)) = found {
-            continue
+            continue;
         } else {
             const INSERT_QUERY: &str = r#"
                 INSERT INTO department_orgs (
@@ -926,14 +873,14 @@ async fn department_org_update_parents(
                 Ok(_) => continue,
                 Err(err) => {
                     return Err(anyhow!("insert department-type fail - {err}"));
-                },
+                }
             }
         }
 
         /*match found {
-            Ok(Some(_)) => continue,
-            _ => {
-            }*/
+        Ok(Some(_)) => continue,
+        _ => {
+        }*/
     }
     Ok(())
 }

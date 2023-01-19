@@ -1,9 +1,9 @@
 mod authentication;
+mod dcare_order;
 mod dcare_user;
+mod department;
 mod errors;
 mod utils;
-mod dcare_order;
-mod department;
 
 use std::sync::{Arc, Mutex};
 
@@ -18,7 +18,7 @@ use axum::{
 };
 use http::Response;
 
-use errors::{/*LoginError, NoUser, SignupError, */NotLoggedIn};
+use errors::NotLoggedIn;
 use pbkdf2::password_hash::rand_core::OsRng;
 use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
@@ -28,8 +28,7 @@ use sqlx::Executor;
 use tera::{Context, Tera};
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
-    Modify, OpenApi,
-    IntoParams, ToSchema,
+    IntoParams, Modify, OpenApi, ToSchema,
 };
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -37,21 +36,17 @@ use utils::*;
 
 use authentication::{
     //delete_user, login, signup,
-    auth, AuthState,
+    auth,
+    AuthState,
 };
+use dcare_order::{order_create, order_delete, order_list_request, order_request, order_update};
 use dcare_user::{
     logout_response_api, me_api, post_delete_api, post_login_api, post_signup_api,
     update_myself_api, update_user_api, user_api, users_api,
 };
-use dcare_order::{
-    order_create, order_list_request,
-    order_request, order_update, order_delete,
-};
 use department::{
-    department_create, department_list_request,
-    department_request, department_update, department_delete,
-    department_org_delete, department_org_list_request,
-    department_org_request,
+    department_create, department_delete, department_list_request, department_org_delete,
+    department_org_list_request, department_org_request, department_request, department_update,
 };
 
 type Templates = Arc<Tera>;
@@ -80,10 +75,7 @@ pub struct ApiResponse {
 
 impl ApiResponse {
     pub fn new(code: u16, message: Option<String>) -> Self {
-        Self {
-            code,
-            message,
-        }
+        Self { code, message }
     }
 
     pub fn update(&mut self, code: u16, message: Option<String>) -> &mut Self {
@@ -204,9 +196,14 @@ pub fn get_router(database: Database) -> Router {
         .route("/api/v1/order", get(order_list_request).post(order_create))
         .route(
             "/api/v1/department/:shorten",
-            get(department_request).put(department_update).delete(department_delete),
+            get(department_request)
+                .put(department_update)
+                .delete(department_delete),
         )
-        .route("/api/v1/department", get(department_list_request).post(department_create))
+        .route(
+            "/api/v1/department",
+            get(department_list_request).post(department_create),
+        )
         .route(
             "/api/v1/department/org/:shorten",
             get(department_org_request).delete(department_org_delete),

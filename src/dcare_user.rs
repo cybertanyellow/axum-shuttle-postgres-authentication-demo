@@ -26,11 +26,8 @@ use crate::authentication::{
 };
 use crate::errors::NotLoggedIn;
 //use crate::errors::{LoginError, NoUser, SignupError};
-use crate::{
-    Database, Random, COOKIE_MAX_AGE, USER_COOKIE_NAME,
-    Pagination, ApiResponse,
-};
 use crate::department::department_name_or_insert;
+use crate::{ApiResponse, Database, Pagination, Random, COOKIE_MAX_AGE, USER_COOKIE_NAME};
 
 async fn title_id_or_insert(database: &Database, name: &str) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM titles WHERE name = $1;";
@@ -120,23 +117,17 @@ pub(crate) async fn query_user(account: &str, database: &Database) -> Option<Use
     }
 }
 
-pub(crate) async fn query_user_id(
-    database: &Database,
-    account: &str,
-) -> Option<i32> {
+pub(crate) async fn query_user_id(database: &Database, account: &str) -> Option<i32> {
     const QUERY: &str = "SELECT id FROM users WHERE account = $1;";
 
     match sqlx::query_as(QUERY)
         .bind(account)
         .fetch_optional(database)
-        .await {
-            Ok(Some((id,))) => {
-                Some(id)
-            },
-            _ => {
-                None
-            },
-        }
+        .await
+    {
+        Ok(Some((id,))) => Some(id),
+        _ => None,
+    }
 
     /*let user: Result<Option<(i32,)>> = sqlx::query_as(QUERY)
     if let Ok(u) = user {
@@ -302,11 +293,14 @@ pub struct ResponseUserLogin {
     permission: Option<BitVec>,
 }
 
-impl  ResponseUserLogin {
-    fn new(code: u16,
-           skey: Option<String>, sval: Option<String>,
-           msg: Option<String>, permission: Option<BitVec>,
-           ) -> Self {
+impl ResponseUserLogin {
+    fn new(
+        code: u16,
+        skey: Option<String>,
+        sval: Option<String>,
+        msg: Option<String>,
+        permission: Option<BitVec>,
+    ) -> Self {
         Self {
             code,
             session_key: skey,
@@ -415,7 +409,7 @@ pub(crate) async fn post_delete_api(
     };
     let allow = permission_check(current_user.get_user().await, &orig);
 
-    if allow == false {
+    if !allow {
         resp.code = 405;
         resp.message = Some(String::from("permission deny"));
         return (StatusCode::OK, Json(resp)).into_response();
@@ -427,7 +421,7 @@ pub(crate) async fn post_delete_api(
             resp.code = 500;
             resp.message = Some(format!("{e}"));
             (StatusCode::OK, Json(resp)).into_response()
-        },
+        }
     }
 }
 
@@ -630,7 +624,7 @@ pub(crate) async fn update_myself_api(
                     }
                 }
             } else {
-                resp.message = Some(format!("password hashed fail"));
+                resp.message = Some("password hashed fail".to_string());
                 resp.code = 500;
                 error!("{:?}", &resp);
             }
@@ -716,27 +710,27 @@ enum PermissionRole {
 impl From<&BitVec> for PermissionRole {
     fn from(p: &BitVec) -> Self {
         if let Some(r) = p.get(0) {
-            if r == true {
+            if r {
                 return Self::Admin("admin".to_string());
             }
         }
         if let Some(r) = p.get(1) {
-            if r == true {
+            if r {
                 return Self::Gm("GM".to_string());
             }
         }
         if let Some(r) = p.get(2) {
-            if r == true {
+            if r {
                 return Self::Maintainer("Maintainer".to_string());
             }
         }
         if let Some(r) = p.get(3) {
-            if r == true {
+            if r {
                 return Self::Comissioner("Comissioner".to_string());
             }
         }
         if let Some(r) = p.get(4) {
-            if r == true {
+            if r {
                 return Self::Jshall("JSHall".to_string());
             }
         }
@@ -796,7 +790,7 @@ pub(crate) async fn update_user_api(
 
     let allow = permission_check(current_user.get_user().await, &orig);
 
-    if allow == false {
+    if !allow {
         resp.code = 405;
         resp.message = Some(String::from("permission deny"));
         return (StatusCode::OK, Json(resp)).into_response();
@@ -808,7 +802,7 @@ pub(crate) async fn update_user_api(
             if let Ok(hashed_password) = password_hashed(&pwd) {
                 hashed_password
             } else {
-                resp.message = Some(format!("password hashed wrong"));
+                resp.message = Some("password hashed wrong".to_string());
                 resp.code = 400;
                 error!("{:?}", &resp);
                 return (StatusCode::OK, Json(resp)).into_response();
@@ -816,14 +810,11 @@ pub(crate) async fn update_user_api(
         }
     };
 
-    let permission = user.permission
-        .map_or(orig.permission, |p| p);
+    let permission = user.permission.map_or(orig.permission, |p| p);
 
-    let username = user.username
-        .or(orig.username);
+    let username = user.username.or(orig.username);
 
-    let worker_id = user.worker_id
-        .or(orig.worker_id);
+    let worker_id = user.worker_id.or(orig.worker_id);
 
     let title_id = if let Some(title) = user.title {
         match title_id_or_insert(&database, &title).await {
@@ -854,12 +845,9 @@ pub(crate) async fn update_user_api(
         orig.department_id
     };
 
-    let phone = user.phone
-        .or(Some(orig.phone));
+    let phone = user.phone.or(Some(orig.phone));
 
-    let email = user.email
-        .or(orig.email);
-
+    let email = user.email.or(orig.email);
 
     const UPDATE_QUERY: &str = r#"
         UPDATE users SET 
@@ -891,7 +879,7 @@ pub(crate) async fn update_user_api(
     match fetch_one {
         Ok((id,)) => {
             resp.update(200, Some(format!("order update success - history{id}")));
-        },
+        }
         Err(e) => {
             resp.update(500, Some(format!("{e}")));
             error!("{:?}", &resp);
@@ -948,22 +936,18 @@ fn permission_check(current: Option<&CurrentUser>, target: &UserRawInfo) -> bool
     }
 }
 
-async fn update_login_at(
-    database: &Database,
-    account: &str,
-) -> Result<()> {
-    let fetch_one: Result<(i32,), _> = sqlx::query_as(
-        "UPDATE users SET login_at = $1 WHERE account = $2 RETURNING id;",
-        )
-        .bind(&Utc::now())
-        .bind(account)
-        .fetch_one(database)
-        .await;
+async fn update_login_at(database: &Database, account: &str) -> Result<()> {
+    let fetch_one: Result<(i32,), _> =
+        sqlx::query_as("UPDATE users SET login_at = $1 WHERE account = $2 RETURNING id;")
+            .bind(Utc::now())
+            .bind(account)
+            .fetch_one(database)
+            .await;
     match fetch_one {
         Ok((id,)) => {
             debug!("update users/login_at ok {id}");
             Ok(())
-        },
+        }
         Err(err) => {
             error!("update users/login_at fail {err}");
             Err(anyhow!("{err}"))
@@ -976,10 +960,7 @@ pub struct TestUser {
     permission: BitVec,
 }
 
-pub(crate) async fn query_raw_user(
-    database: &Database,
-    account: &str,
-) -> Option<UserRawInfo> {
+pub(crate) async fn query_raw_user(database: &Database, account: &str) -> Option<UserRawInfo> {
     const QUERY: &str = "SELECT * FROM users WHERE account = $1;";
 
     if let Ok(user) = sqlx::query_as::<_, UserRawInfo>(QUERY)
@@ -992,4 +973,3 @@ pub(crate) async fn query_raw_user(
         None
     }
 }
-
