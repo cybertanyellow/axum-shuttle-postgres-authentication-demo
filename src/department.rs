@@ -107,6 +107,42 @@ pub struct DepartmentInfo {
     childs: Option<Vec<DepartmentOrg>>,
 }
 
+impl From<(DepartmentInfoPartial, Option<Vec<DepartmentOrg>>, Option<Vec<DepartmentOrg>>)> for DepartmentInfo {
+    fn from(p: (
+            DepartmentInfoPartial,
+            Option<Vec<DepartmentOrg>>,
+            Option<Vec<DepartmentOrg>>
+        ),
+    ) -> Self {
+        DepartmentInfo {
+            create_at: p.0.create_at,
+            update_at: p.0.update_at,
+            shorten: p.0.shorten,
+            store_name: p.0.store_name,
+            owner: p.0.owner,
+            telephone: p.0.telephone,
+            address: p.0.address,
+            type_id: p.0.type_id,
+            parents: p.1,
+            childs: p.2,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+pub struct DepartmentInfoPartial {
+    id: i32,
+    create_at: DateTime<Utc>,
+    update_at: Option<DateTime<Utc>>,
+
+    shorten: String,
+    store_name: Option<String>,
+    owner: Option<String>,
+    telephone: Option<String>,
+    address: Option<String>,
+    type_id: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct DepartmentUpdate {
     #[schema(example = "ADM, BM, ...")]
@@ -146,7 +182,7 @@ pub struct DepartmentResponse {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct DepartmentsResponse {
     code: u16,
-    departments: Option<Vec<DepartmentSummary>>,
+    departments: Option<Vec<DepartmentInfo>>,
 }
 
 #[utoipa::path(
@@ -363,6 +399,9 @@ pub(crate) async fn department_list_request(
 
     const QUERY: &str = r#"
         SELECT
+            d.id,
+            create_at,
+            update_at,
             shorten,
             store_name,
             owner,
@@ -374,13 +413,26 @@ pub(crate) async fn department_list_request(
         LIMIT $1 OFFSET $2;
     "#;
 
-    if let Ok(departments) = sqlx::query_as::<_, DepartmentSummary>(QUERY)
+    if let Ok(mut departments) = sqlx::query_as::<_, DepartmentInfoPartial>(QUERY)
         .bind(entries)
         .bind(offset)
         .fetch_all(&database)
         .await
     {
-        resp.departments = Some(departments);
+        let mut infos: Vec<DepartmentInfo> = Vec::new();
+
+        loop {
+            if let Some(d) = departments.pop() {
+                let parents = query_parent_shorten(&database, d.id).await;
+                let childs = query_childs(&database, d.id).await;
+                let info = DepartmentInfo::from((d, parents, childs));
+                infos.push(info);
+            } else {
+                break;
+            }
+        }
+
+        resp.departments = Some(infos);
         resp.code = 200;
     }
     (StatusCode::OK, Json(resp)).into_response()
