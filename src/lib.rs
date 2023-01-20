@@ -45,8 +45,9 @@ use dcare_user::{
     update_myself_api, update_user_api, user_api, users_api,
 };
 use department::{
-    department_create, department_delete, department_list_request, department_org_delete,
-    department_org_list_request, department_org_request, department_request, department_update,
+    department_create, department_delete, department_list_request,
+    department_request, department_update,
+    /*department_org_delete, department_org_list_request, department_org_request,*/
 };
 
 type Templates = Arc<Tera>;
@@ -133,9 +134,9 @@ pub fn get_router(database: Database) -> Router {
             department::department_update,
             department::department_create,
 
-            department::department_org_request,
+            /*department::department_org_request,
             department::department_org_list_request,
-            department::department_org_delete,
+            department::department_org_delete,*/
         ),
         components(
             schemas(
@@ -152,8 +153,8 @@ pub fn get_router(database: Database) -> Router {
                 department::DepartmentInfo, department::DepartmentSummary,
                 department::DepartmentNew, department::DepartmentUpdate,
 
-                department::DepartmentOrgsResponse, department::DepartmentOrgResponse,
-                department::DepartmentOrgData,
+                /*department::DepartmentOrgsResponse, department::DepartmentOrgResponse,
+                department::DepartmentOrgData,*/
             )
         ),
         modifiers(&SecurityAddon),
@@ -203,11 +204,11 @@ pub fn get_router(database: Database) -> Router {
             "/api/v1/department",
             get(department_list_request).post(department_create),
         )
-        .route(
+        /*.route(
             "/api/v1/department/org/:shorten",
             get(department_org_request).delete(department_org_delete),
         )
-        .route("/api/v1/department/org", get(department_org_list_request))
+        .route("/api/v1/department/org", get(department_org_list_request))*/
         .layer(middleware::from_fn(move |req, next| {
             auth(req, next, middleware_database.clone())
         }))

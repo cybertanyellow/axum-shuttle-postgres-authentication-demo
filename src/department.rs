@@ -320,7 +320,8 @@ pub(crate) async fn department_update(
     delete,
     path = "/api/v1/department/{shorten}",
     params(
-        ("shorten" = String, Path, description = "department shorten to delete")
+        ("shorten" = String, Path, description = "department shorten to delete"),
+        DepartmentOrgPair,
     ),
     responses(
         (status = 200, description = "delete success", body = ApiResponse, example = json!(ApiResponse::new(200, Some(String::from("success"))))),
@@ -336,6 +337,7 @@ pub(crate) async fn department_delete(
     Extension(mut current_user): Extension<AuthState>,
     Extension(database): Extension<Database>,
     Path(shorten): Path<String>,
+    pair: Query<DepartmentOrgPair>,
 ) -> impl IntoResponse {
     let mut resp = ApiResponse::new(400, None);
 
@@ -346,7 +348,7 @@ pub(crate) async fn department_delete(
         return (StatusCode::OK, Json(resp)).into_response();
     };
 
-    let orig = match query_raw_department(&database, &shorten).await {
+    let _orig = match query_raw_department(&database, &shorten).await {
         Some(orig) => orig,
         None => {
             resp.update(404, Some(format!("department{shorten} not found")));
@@ -355,10 +357,25 @@ pub(crate) async fn department_delete(
         }
     };
 
-    if query_childs(&database, orig.id).await.is_some() {
+    /* manual delete organization....
+     * if query_childs(&database, orig.id).await.is_some() {
         resp.update(400, Some("denied by child departments".to_string()));
         error!("{:?}", &resp);
         return (StatusCode::OK, Json(resp)).into_response();
+    }*/
+    match org_delete(&database, &shorten, pair).await {
+        Err(e) => {
+            resp.update(400, Some(format!("delete organization pair fail - {e}")));
+            error!("{:?}", &resp);
+            return (StatusCode::OK, Json(resp)).into_response();
+        },
+        Ok(all) => {
+            if !all {
+                resp.update(200, Some("delete organization pair success".to_string()));
+                error!("{:?}", &resp);
+                return (StatusCode::OK, Json(resp)).into_response();
+            }
+        },
     }
 
     const QUERY: &str = r#"
@@ -515,7 +532,7 @@ pub(crate) async fn department_create(
     (StatusCode::OK, Json(resp)).into_response()
 }
 
-#[derive(Deserialize, IntoParams)]
+#[derive(Debug, Deserialize, IntoParams)]
 pub struct DepartmentOrgPair {
     pub parent: Option<String>,
     pub child: Option<String>,
@@ -610,6 +627,7 @@ pub(crate) async fn department_org_delete(
         (status = 200, description = "get department orgnization list", body = DepartmentOrgsResponse)
     )
 )]
+#[allow(dead_code)]
 pub(crate) async fn department_org_list_request(
     Extension(_database): Extension<Database>,
     //pagination: Option<Query<Pagination>>,
@@ -633,6 +651,7 @@ pub(crate) async fn department_org_list_request(
         (status = 200, description = "get department orgnization list", body = DepartmentOrgsResponse)
     )
 )]
+#[allow(dead_code)]
 pub(crate) async fn department_org_request(
     Extension(_current_user): Extension<AuthState>,
     Extension(database): Extension<Database>,
@@ -928,11 +947,141 @@ async fn department_org_update_parents(
                 }
             }
         }
-
-        /*match found {
-        Ok(Some(_)) => continue,
-        _ => {
-        }*/
     }
     Ok(())
+}
+
+#[allow(dead_code)]
+async fn department_org_renew_parents(
+    database: &Database,
+    id: i32,
+    parents: &[String],
+) -> Result<()> {
+    const QUERY: &str = r#"
+        DELETE from department_orgs
+        WHERE
+        child_id = $1
+        RETURNING id;
+    "#;
+
+    if sqlx::query_as::<_, DepartmentDeleteRes>(QUERY)
+        .bind(id)
+        .fetch_all(database)
+        .await
+        .is_err()
+    {
+    }
+
+    for p in parents.iter() {
+        const QUERY: &str = r#"
+            SELECT
+                id
+            FROM department_orgs
+            WHERE parent_id = (
+                SELECT
+                    id
+                FROM departments
+                WHERE shorten = $1
+            ) AND child_id = $2;
+        "#;
+        let found: Result<Option<(i32,)>, _> = sqlx::query_as(QUERY)
+            .bind(p)
+            .bind(id)
+            .fetch_optional(database)
+            .await;
+
+        if let Ok(Some(_)) = found {
+            continue;
+        } else {
+            const INSERT_QUERY: &str = r#"
+                INSERT INTO department_orgs (
+                    parent_id, child_id
+                ) VALUES (
+                    (SELECT id FROM departments WHERE shorten = $1), $2
+                ) RETURNING id;
+            "#;
+            let fetch_one: Result<(i32,), _> = sqlx::query_as(INSERT_QUERY)
+                .bind(p)
+                .bind(id)
+                .fetch_one(database)
+                .await;
+
+            match fetch_one {
+                Ok(_) => continue,
+                Err(err) => {
+                    return Err(anyhow!("insert department-type fail - {err}"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn org_delete(
+    database: &Database,
+    shorten: &String,
+    pair: Query<DepartmentOrgPair>,
+) -> Result<bool> {
+    let mut do_all = true;
+    if let Some(ref parent) = pair.parent {
+        const QUERY: &str = r#"
+            DELETE from department_orgs
+            WHERE
+            child_id = (SELECT id FROM departments WHERE shorten = $1)
+            AND
+            parent_id = (SELECT id FROM departments WHERE shorten = $2)
+            RETURNING id;
+        "#;
+
+        if let Err(e) = sqlx::query_as::<_, DepartmentDeleteRes>(QUERY)
+            .bind(shorten)
+            .bind(parent)
+            .fetch_all(database)
+            .await
+        {
+            return Err(anyhow!({e}));
+        }
+        do_all = false;
+    }
+    if let Some(ref child) = pair.child {
+        const QUERY: &str = r#"
+            DELETE from department_orgs
+            WHERE
+            child_id = (SELECT id FROM departments WHERE shorten = $1)
+            AND
+            parent_id = (SELECT id FROM departments WHERE shorten = $2)
+            RETURNING id;
+        "#;
+
+        if let Err(e) = sqlx::query_as::<_, DepartmentDeleteRes>(QUERY)
+            .bind(child)
+            .bind(shorten)
+            .fetch_all(database)
+            .await
+        {
+            return Err(anyhow!({e}));
+        }
+        do_all = false;
+    }
+
+    if do_all {
+        const QUERY: &str = r#"
+            DELETE from department_orgs
+            WHERE
+                child_id = (SELECT id FROM departments WHERE shorten = $1)
+                OR
+                parent_id = (SELECT id FROM departments WHERE shorten = $1)
+            RETURNING id;
+        "#;
+
+        if let Err(e) = sqlx::query_as::<_, DepartmentDeleteRes>(QUERY)
+            .bind(shorten)
+            .fetch_all(database)
+            .await
+        {
+            return Err(anyhow!({e}));
+        }
+    }
+
+    Ok(do_all)
 }

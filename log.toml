@@ -428,6 +428,137 @@ curl -H 'Content-Type: application/json' --cookie 'user_token=610050678489817034
 }
 
 
+curl -H 'Content-Type: application/json' --cookie 'user_token=133538013044630618834801819609124361137' http://127.0.0.1:8000/api/v1/department -s -d '{"shorten":"JSHall2","store_name":"taiwan
+jshall2 in taichuang","type_id":"維保中心","parents":["ADM"]}'
+{"code":200,"message":"department2 create success"}⏎                                                                                                                                            yellow@LAPTOP-AA8VDMLU ~/s/axum-shuttle-postgres-authentication-demo (dcare-rest-service)>
+yellow@LAPTOP-AA8VDMLU ~/s/axum-shuttle-postgres-authentication-demo (dcare-rest-service)>
+yellow@LAPTOP-AA8VDMLU ~/s/axum-shuttle-postgres-authentication-demo (dcare-rest-service)>
+curl -H 'Content-Type: application/json' --cookie 'user_token=3536642166546380728190240069996578492' http://127.0.0.1:8000/api/v1/department -s | jq
+{
+    "code": 200,
+        "departments": [
+        {
+            "create_at": "2023-01-20T05:15:47.361467Z",
+            "update_at": null,
+            "shorten": "JSHall2",
+            "store_name": "taiwan jshall2 in taichuang",
+            "owner": null,
+            "telephone": null,
+            "address": null,
+            "type_id": "維保中心",
+            "parents": [
+                "ADM"
+            ],
+            "childs": []
+        },
+        {
+            "create_at": "2023-01-20T05:13:57.033102Z",
+            "update_at": null,
+            "shorten": "ADM",
+            "store_name": "總部",
+            "owner": null,
+            "telephone": null,
+            "address": null,
+            "type_id": "總部",
+            "parents": [],
+            "childs": [
+                "JSHall2"
+            ]
+        }
+    ]
+}
+
+curl -H 'Content-Type: application/json' --cookie 'user_token=293235454743220836731261381085443788318' http://127.0.0.1:8000/api/v1/department -s | jq
+{
+    "code": 200,
+        "departments": [
+        {
+            "create_at": "2023-01-20T06:57:21.845226Z",
+            "update_at": null,
+            "shorten": "BB",
+            "store_name": "my BB",
+            "owner": null,
+            "telephone": null,
+            "address": null,
+            "type_id": "維保中心",
+            "parents": [
+                "JSHall2"
+            ],
+            "childs": []
+        },
+        {
+            "create_at": "2023-01-20T06:56:18.978506Z",
+            "update_at": null,
+            "shorten": "JSHall2",
+            "store_name": "taiwan jshall2 in taichuang",
+            "owner": null,
+            "telephone": null,
+            "address": null,
+            "type_id": "維保中心",
+            "parents": [
+                "ADM"
+            ],
+            "childs": [
+                "BB"
+            ]
+        },
+        {
+            "create_at": "2023-01-20T05:50:57.771764Z",
+            "update_at": null,
+            "shorten": "ADM",
+            "store_name": "總部",
+            "owner": null,
+            "telephone": null,
+            "address": null,
+            "type_id": "總部",
+            "parents": [],
+            "childs": [
+                "JSHall2"
+            ]
+        }
+    ]
+}
+yellow@LAPTOP-AA8VDMLU ~/s/axum-shuttle-postgres-authentication-demo (dcare-rest-service)>
+yellow@LAPTOP-AA8VDMLU ~/s/axum-shuttle-postgres-authentication-demo (dcare-rest-service)>
+yellow@LAPTOP-AA8VDMLU ~/s/axum-shuttle-postgres-authentication-demo (dcare-rest-service)>
+yellow@LAPTOP-AA8VDMLU ~/s/axum-shuttle-postgres-authentication-demo (dcare-rest-service)>
+yellow@LAPTOP-AA8VDMLU ~/s/axum-shuttle-postgres-authentication-demo (dcare-rest-service)>
+yellow@LAPTOP-AA8VDMLU ~/s/axum-shuttle-postgres-authentication-demo (dcare-rest-service)>
+curl -H 'Content-Type: application/json' --cookie 'user_token=293235454743220836731261381085443788318' http://127.0.0.1:8000/api/v1/department/JSHall2 -s -X DELETE
+{"code":200,"message":"delete success"}⏎                                                                                                                                                        yellow@LAPTOP-AA8VDMLU ~/s/axum-shuttle-postgres-authentication-demo (dcare-rest-service)>
+yellow@LAPTOP-AA8VDMLU ~/s/axum-shuttle-postgres-authentication-demo (dcare-rest-service)>
+yellow@LAPTOP-AA8VDMLU ~/s/axum-shuttle-postgres-authentication-demo (dcare-rest-service)>
+curl -H 'Content-Type: application/json' --cookie 'user_token=293235454743220836731261381085443788318' http://127.0.0.1:8000/api/v1/department -s | jq
+{
+    "code": 200,
+        "departments": [
+        {
+            "create_at": "2023-01-20T06:57:21.845226Z",
+            "update_at": null,
+            "shorten": "BB",
+            "store_name": "my BB",
+            "owner": null,
+            "telephone": null,
+            "address": null,
+            "type_id": "維保中心",
+            "parents": [],
+            "childs": []
+        },
+        {
+            "create_at": "2023-01-20T05:50:57.771764Z",
+            "update_at": null,
+            "shorten": "ADM",
+            "store_name": "總部",
+            "owner": null,
+            "telephone": null,
+            "address": null,
+            "type_id": "總部",
+            "parents": [],
+            "childs": []
+        }
+    ]
+}
+
 
 ## users
 
