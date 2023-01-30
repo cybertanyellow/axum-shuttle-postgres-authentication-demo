@@ -23,6 +23,7 @@ use uuid::Uuid;
 //};
 
 use crate::authentication::AuthState;
+use crate::dcare_user::query_user_by_department_id;
 
 use crate::errors::NotLoggedIn;
 use crate::{ApiResponse, Database, Pagination};
@@ -348,14 +349,22 @@ pub(crate) async fn department_delete(
         return (StatusCode::OK, Json(resp)).into_response();
     };
 
-    let _orig = match query_raw_department(&database, &shorten).await {
-        Some(orig) => orig,
+    match query_raw_department(&database, &shorten).await {
+        Some(orig) => {
+            if let Some(user) = query_user_by_department_id(&database, orig.id)
+                .await
+                {
+                    resp.update(400, Some(format!("{user} still connected")));
+                    error!("{:?}", &resp);
+                    return (StatusCode::OK, Json(resp)).into_response();
+                }
+        },
         None => {
             resp.update(404, Some(format!("department{shorten} not found")));
             error!("{:?}", &resp);
             return (StatusCode::OK, Json(resp)).into_response();
         }
-    };
+    }
 
     /* manual delete organization....
      * if query_childs(&database, orig.id).await.is_some() {

@@ -1,4 +1,6 @@
 # database
+docker run --rm -it postgres:15.1-alpine psql -U user-dcare-rest-service -W eVWDdnbFuOOL -h db.shuttle.rs -p 5432 -d db-dcare-rest-service
+or
 run `docker exec -it shuttle_dcare-rest-service_shared_postgres bash` to find psql
 
 run `psql -U postgres` into cli
