@@ -24,6 +24,7 @@ use uuid::Uuid;
 //};
 
 use crate::authentication::AuthState;
+use crate::dcare_order::query_order_by_department_id;
 use crate::dcare_user::query_user_by_department_id;
 
 use crate::errors::NotLoggedIn;
@@ -349,10 +350,18 @@ pub(crate) async fn department_delete(
 
     match query_raw_department(&database, &shorten).await {
         Some(orig) => {
-            if let Some(user) = query_user_by_department_id(&database, orig.id).await {
-                resp.update(400, Some(format!("{user} still connected")));
-                error!("{:?}", &resp);
-                return (StatusCode::OK, Json(resp)).into_response();
+            if pair.parent.is_none() && pair.child.is_none() {
+                /* check related before deleted it */
+                if let Some(user) = query_user_by_department_id(&database, orig.id).await {
+                    resp.update(400, Some(format!("reject due to user/{user} related")));
+                    error!("{:?}", &resp);
+                    return (StatusCode::OK, Json(resp)).into_response();
+                }
+                if let Some(order) = query_order_by_department_id(&database, orig.id).await {
+                    resp.update(400, Some(format!("reject due to order/{order} related")));
+                    error!("{:?}", &resp);
+                    return (StatusCode::OK, Json(resp)).into_response();
+                }
             }
         }
         None => {

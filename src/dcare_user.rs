@@ -26,6 +26,7 @@ use crate::authentication::{
 };
 use crate::errors::NotLoggedIn;
 //use crate::errors::{LoginError, NoUser, SignupError};
+use crate::dcare_order::query_order_by_user_id;
 use crate::department::department_name_or_insert;
 use crate::{ApiResponse, Database, Pagination, Random, COOKIE_MAX_AGE, USER_COOKIE_NAME};
 
@@ -407,6 +408,13 @@ pub(crate) async fn post_delete_api(
             return (StatusCode::OK, Json(resp)).into_response();
         }
     };
+
+    if let Some(order) = query_order_by_user_id(&database, orig.id).await {
+        resp.update(400, Some(format!("reject due to order/{order} related")));
+        error!("{:?}", &resp);
+        return (StatusCode::OK, Json(resp)).into_response();
+    }
+
     let allow = permission_check(current_user.get_user().await, &orig);
 
     if !allow {

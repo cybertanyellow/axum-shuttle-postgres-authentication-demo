@@ -131,7 +131,7 @@ pub struct OrderUpdate {
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct OrderNew {
     #[schema(example = "department's store_name")]
-    department: Option<String>,
+    department: String,
     #[schema(example = "user's account")]
     contact: Option<String>,
     customer_name: Option<String>,
@@ -179,6 +179,7 @@ pub struct OrderSummary {
     department: Option<String>,
     contact: Option<String>,
     customer_name: Option<String>,
+    customer_phone: Option<String>,
 
     service: Option<String>,
     cost: Option<i32>,
@@ -360,7 +361,7 @@ pub(crate) async fn order_update(
         match query_user_id(&database, maintainer).await {
             Some(id) => Some(id),
             None => {
-                resp.update(400, Some("servicer staff not found".to_string()));
+                resp.update(400, Some("maintainer staff not found".to_string()));
                 return (StatusCode::OK, Json(resp)).into_response();
             }
         }
@@ -541,9 +542,10 @@ pub(crate) async fn order_list_request(
             d.store_name AS department,
             u1.username AS contact,
             o.customer_name,
+            o.customer_phone,
             o.service,
             o.cost,
-            s.flow status,
+            s.flow AS status,
             u2.username AS servicer,
             u3.username AS maintainer
         FROM orders o
@@ -597,16 +599,13 @@ pub(crate) async fn order_create(
         None /* super user? */
     };
 
-    let department_id = match order.department {
-        Some(department) => match department_name_or_insert(&database, &department).await {
-            Ok(id) => Some(id),
-            Err(e) => {
-                resp.update(500, Some(format!("{e}")));
-                error!("{:?}", &resp);
-                return (StatusCode::OK, Json(resp)).into_response();
-            }
-        },
-        None => None, /*user user? */
+    let department_id = match department_name_or_insert(&database, &order.department).await {
+        Ok(id) => Some(id),
+        Err(e) => {
+            resp.update(500, Some(format!("{e}")));
+            error!("{:?}", &resp);
+            return (StatusCode::OK, Json(resp)).into_response();
+        }
     };
 
     let brand = &order.brand;
@@ -696,7 +695,7 @@ pub(crate) async fn order_create(
         match query_user_id(&database, maintainer).await {
             Some(id) => Some(id),
             None => {
-                resp.update(400, Some("servicer staff not found".to_string()));
+                resp.update(400, Some("maintainer staff not found".to_string()));
                 return (StatusCode::OK, Json(resp)).into_response();
             }
         }
@@ -1000,6 +999,41 @@ impl OrderSN {
             hh = now.hour()
         );
         Self(res)
+    }
+}
+
+pub(crate) async fn query_order_by_department_id(database: &Database, did: i32) -> Option<String> {
+    const QUERY: &str = "SELECT * FROM orders WHERE department_id = $1;";
+
+    if let Ok(order) = sqlx::query_as::<_, OrderRawInfo>(QUERY)
+        .bind(did)
+        .fetch_optional(database)
+        .await
+    {
+        order.and_then(|o| o.sn)
+    } else {
+        None
+    }
+}
+
+pub(crate) async fn query_order_by_user_id(database: &Database, uid: i32) -> Option<String> {
+    const QUERY: &str = r#"
+            SELECT * FROM orders
+            WHERE
+                issuer_id = $1 OR
+                contact_id = $1 OR
+                servicer_id = $1 OR
+                maintainer_id = $1;
+        "#;
+
+    if let Ok(order) = sqlx::query_as::<_, OrderRawInfo>(QUERY)
+        .bind(uid)
+        .fetch_optional(database)
+        .await
+    {
+        order.and_then(|o| o.sn)
+    } else {
+        None
     }
 }
 

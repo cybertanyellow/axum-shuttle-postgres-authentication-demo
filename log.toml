@@ -750,3 +750,115 @@ curl -H 'Content-Type: application/json' --cookie 'user_token=293235454743220836
   }
 }
 
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=306333113601657959018076325298618669536' http://127.0.0.1:8000/api/v1/order -s -d '{"customer_phone":"phone2","brand":"brand1","appearance":{"storage":[3],"nbits":8},"status":"check"}'
+Failed to deserialize the JSON body into the target type: .: missing field `department` at line 1 column 100⏎
+│axum-shuttle-postgres-authentication-demo via 🦀 v1.66.0 is 📦 v0.1.0 on  dcare-rest-service
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=306333113601657959018076325298618669536' http://127.0.0.1:8000/api/v1/order -s -d '{"customer_phone":"phone4","brand":"brand1","appearance":{"storage":[3],"nbits":8},"status":"check","department":"總部"}'
+{"code":200,"message":"order7 create success"}⏎
+┌─────────────────────────────────────────
+│axum-shuttle-postgres-authentication-demo via 🦀 v1.66.0 is 📦 v0.1.0 on  dcare-rest-service
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=306333113601657959018076325298618669536' http://127.0.0.1:8000/api/v1/order -s | jq
+{
+  "code": 200,
+  "orders": [
+    {
+      "sn": "ADM301310300070",
+      "issue_at": "2023-01-31T03:16:29.090719Z",
+      "department": "總部",
+      "contact": null,
+      "customer_name": null,
+      "customer_phone": "phone4",
+      "service": null,
+      "cost": null,
+      "status": "check",
+      "servicer": null,
+      "maintainer": null
+    },
+    {
+      "sn": "JSHall2301310300060",
+      "issue_at": "2023-01-31T03:12:16.991002Z",
+      "department": "taiwan jshall2 in taichuang",
+      "contact": null,
+      "customer_name": null,
+      "customer_phone": "phone3",
+      "service": null,
+      "cost": null,
+      "status": "check",
+      "servicer": null,
+      "maintainer": null
+    },
+    {
+      "sn": "JSHall2301310300020",
+      "issue_at": "2023-01-31T03:12:00.751834Z",
+      "department": "taiwan jshall2 in taichuang",
+      "contact": null,
+      "customer_name": null,
+      "customer_phone": "phone2",
+      "service": null,
+      "cost": null,
+      "status": "check",
+      "servicer": null,
+      "maintainer": null
+    },
+    {
+      "sn": "NN0301310300010",
+      "issue_at": "2023-01-31T03:02:29.220723Z",
+      "department": null,
+      "contact": null,
+      "customer_name": null,
+      "customer_phone": "phone1",
+      "service": null,
+      "cost": null,
+      "status": "check",
+      "servicer": null,
+      "maintainer": null
+    }
+  ]
+}
+
+│axum-shuttle-postgres-authentication-demo via 🦀 v1.66.0 is 📦 v0.1.0 on  dcare-rest-service
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=306333113601657959018076325298618669536' http://127.0.0.1:8000/api/v1/order/JSHall2301310300060 -X PUT -d '{"maintainer":"aaaaaaaa"}'
+{"code":400,"message":"maintainer staff not found"}⏎
+│axum-shuttle-postgres-authentication-demo via 🦀 v1.66.0 is 📦 v0.1.0 on  dcare-rest-service
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=306333113601657959018076325298618669536' http://127.0.0.1:8000/api/v1/order/JSHall2301310300060 -X PUT -d '{"maintainer":"aaa"}'
+{"code":200,"message":"order update success - history1"}⏎
+│axum-shuttle-postgres-authentication-demo via 🦀 v1.66.0 is 📦 v0.1.0 on  dcare-rest-service
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=306333113601657959018076325298618669536' http://127.0.0.1:8000/api/v1/order/JSHall2301310300060 -s | jq
+{
+  "code": 200,
+  "order": {
+    "sn": "JSHall2301310300060",
+    "issue_at": "2023-01-31T03:12:16.991002Z",
+    "department": "taiwan jshall2 in taichuang",
+    "contact": null,
+    "customer_name": null,
+    "customer_phone": "phone3",
+    "customer_address": null,
+    "brand": "brand1",
+    "model": "unknown",
+    "purchase_at": null,
+    "accessory1": null,
+    "accessory2": null,
+    "accessory_other": null,
+    "appearance": {
+      "storage": [
+        3
+      ],
+      "nbits": 8
+    },
+    "appearance_other": null,
+    "service": null,
+    "fault1": null,
+    "fault2": null,
+    "fault_other": null,
+    "photo_url": null,
+    "remark": null,
+    "cost": null,
+    "prepaid_free": null,
+    "status": "check",
+    "servicer": null,
+    "maintainer": "maintainer"
+  }
+}
+└─> curl -H 'Content-Type: application/json' http://127.0.0.1:8000/api/v1/user/aaa -X DELETE
+{"code":400,"message":"reject due to order/JSHall2301310300060 related"}⏎
