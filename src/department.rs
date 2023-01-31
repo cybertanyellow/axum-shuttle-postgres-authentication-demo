@@ -108,11 +108,18 @@ pub struct DepartmentInfo {
     childs: Option<Vec<DepartmentOrg>>,
 }
 
-impl From<(DepartmentInfoPartial, Option<Vec<DepartmentOrg>>, Option<Vec<DepartmentOrg>>)> for DepartmentInfo {
-    fn from(p: (
+impl
+    From<(
+        DepartmentInfoPartial,
+        Option<Vec<DepartmentOrg>>,
+        Option<Vec<DepartmentOrg>>,
+    )> for DepartmentInfo
+{
+    fn from(
+        p: (
             DepartmentInfoPartial,
             Option<Vec<DepartmentOrg>>,
-            Option<Vec<DepartmentOrg>>
+            Option<Vec<DepartmentOrg>>,
         ),
     ) -> Self {
         DepartmentInfo {
@@ -351,14 +358,12 @@ pub(crate) async fn department_delete(
 
     match query_raw_department(&database, &shorten).await {
         Some(orig) => {
-            if let Some(user) = query_user_by_department_id(&database, orig.id)
-                .await
-                {
-                    resp.update(400, Some(format!("{user} still connected")));
-                    error!("{:?}", &resp);
-                    return (StatusCode::OK, Json(resp)).into_response();
-                }
-        },
+            if let Some(user) = query_user_by_department_id(&database, orig.id).await {
+                resp.update(400, Some(format!("{user} still connected")));
+                error!("{:?}", &resp);
+                return (StatusCode::OK, Json(resp)).into_response();
+            }
+        }
         None => {
             resp.update(404, Some(format!("department{shorten} not found")));
             error!("{:?}", &resp);
@@ -377,14 +382,14 @@ pub(crate) async fn department_delete(
             resp.update(400, Some(format!("delete organization pair fail - {e}")));
             error!("{:?}", &resp);
             return (StatusCode::OK, Json(resp)).into_response();
-        },
+        }
         Ok(all) => {
             if !all {
                 resp.update(200, Some("delete organization pair success".to_string()));
                 error!("{:?}", &resp);
                 return (StatusCode::OK, Json(resp)).into_response();
             }
-        },
+        }
     }
 
     const QUERY: &str = r#"
@@ -978,8 +983,7 @@ async fn department_org_renew_parents(
         .fetch_all(database)
         .await
         .is_err()
-    {
-    }
+    {}
 
     for p in parents.iter() {
         const QUERY: &str = r#"
@@ -1048,7 +1052,7 @@ async fn org_delete(
             .fetch_all(database)
             .await
         {
-            return Err(anyhow!({e}));
+            return Err(anyhow!({ e }));
         }
         do_all = false;
     }
@@ -1068,7 +1072,7 @@ async fn org_delete(
             .fetch_all(database)
             .await
         {
-            return Err(anyhow!({e}));
+            return Err(anyhow!({ e }));
         }
         do_all = false;
     }
@@ -1088,7 +1092,7 @@ async fn org_delete(
             .fetch_all(database)
             .await
         {
-            return Err(anyhow!({e}));
+            return Err(anyhow!({ e }));
         }
     }
 

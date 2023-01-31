@@ -45,8 +45,8 @@ use dcare_user::{
     update_myself_api, update_user_api, user_api, users_api,
 };
 use department::{
-    department_create, department_delete, department_list_request,
-    department_request, department_update,
+    department_create, department_delete, department_list_request, department_request,
+    department_update,
     /*department_org_delete, department_org_list_request, department_org_request,*/
 };
 

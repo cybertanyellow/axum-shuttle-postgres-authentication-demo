@@ -974,10 +974,7 @@ pub(crate) async fn query_raw_user(database: &Database, account: &str) -> Option
     }
 }
 
-pub(crate) async fn query_user_by_department_id(
-    database: &Database,
-    did: i32
-) -> Option<String> {
+pub(crate) async fn query_user_by_department_id(database: &Database, did: i32) -> Option<String> {
     const QUERY: &str = "SELECT * FROM users WHERE department_id = $1;";
 
     if let Ok(user) = sqlx::query_as::<_, UserRawInfo>(QUERY)
