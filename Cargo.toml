@@ -1,13 +1,14 @@
 [package]
 name = "dcare-rest-service"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 publish = false
 
 [lib]
 
 [dependencies]
-shuttle-service = { version = "0.8.0", features = ["web-axum"] }
+shuttle-service = { version = "0.9.0", features = ["web-axum"] }
+shuttle-shared-db = { version = "0.9.0", features = ["postgres"] }
 axum = "0.6.1"
 sync_wrapper = "0.1.1"
 http = "0.2.8"
@@ -18,7 +19,6 @@ rand_chacha = "0.3.1"
 rand_core = { version = "0.6.4", features = ["std"] }
 sqlx = { version = "0.6.2", features = ["runtime-tokio-native-tls", "postgres", "chrono", "bit-vec"] }
 tera = { version = "1.17.1", default-features = false }
-shuttle-shared-db = { version = "0.8.0", features = ["postgres"] }
 cookie = "0.16.2"
 serde_json = "1.0.91"
 serde = { version = "1.0.152", features = ["derive"] }
