@@ -7,6 +7,7 @@ use axum::{
 };
 
 use anyhow::{anyhow, Result};
+use bit_vec::BitVec;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 //use serde_json::json;
@@ -80,7 +81,7 @@ pub struct DepartmentRawInfo {
     owner: Option<String>,
     telephone: Option<String>,
     address: Option<String>,
-    type_id: Option<i32>,
+    type_mask: BitVec,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
@@ -90,7 +91,7 @@ pub struct DepartmentSummary {
     owner: Option<String>,
     telephone: Option<String>,
     address: Option<String>,
-    type_id: Option<String>,
+    type_mask: BitVec,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
@@ -103,7 +104,7 @@ pub struct DepartmentInfo {
     owner: Option<String>,
     telephone: Option<String>,
     address: Option<String>,
-    type_id: Option<String>,
+    type_mask: BitVec,
     parents: Option<Vec<DepartmentOrg>>,
     childs: Option<Vec<DepartmentOrg>>,
 }
@@ -130,7 +131,7 @@ impl
             owner: p.0.owner,
             telephone: p.0.telephone,
             address: p.0.address,
-            type_id: p.0.type_id,
+            type_mask: p.0.type_mask,
             parents: p.1,
             childs: p.2,
         }
@@ -148,7 +149,7 @@ pub struct DepartmentInfoPartial {
     owner: Option<String>,
     telephone: Option<String>,
     address: Option<String>,
-    type_id: Option<String>,
+    type_mask: BitVec,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
@@ -160,8 +161,8 @@ pub struct DepartmentUpdate {
     owner: Option<String>,
     telephone: Option<String>,
     address: Option<String>,
-    #[schema(example = "門市,維保中心, ...")]
-    type_id: Option<String>,
+    #[schema(example = "總部(b'10000000),維保中心(b...)")]
+    type_mask: Option<BitVec>,
     #[schema(example = r#"["BM"]"#)]
     parents: Option<Vec<String>>,
 }
@@ -175,8 +176,8 @@ pub struct DepartmentNew {
     owner: Option<String>,
     telephone: Option<String>,
     address: Option<String>,
-    #[schema(example = "門市,維保中心, ...")]
-    type_id: Option<String>,
+    #[schema(example = "總部(b'10000000),維保中心(b...)")]
+    type_mask: BitVec,
     #[schema(example = r#"["BM"]"#)]
     parents: Option<Vec<String>>,
 }
@@ -267,17 +268,7 @@ pub(crate) async fn department_update(
     let address = department.address.or(orig.address);
     let owner = department.owner.or(orig.owner);
     let telephone = department.telephone.or(orig.telephone);
-    let type_id = match department.type_id {
-        Some(type_id) => match department_type_or_insert(&database, &type_id).await {
-            Ok(id) => Some(id),
-            Err(e) => {
-                resp.update(500, Some(format!("{e}")));
-                error!("{:?}", &resp);
-                return (StatusCode::OK, Json(resp)).into_response();
-            }
-        },
-        None => orig.type_id,
-    };
+    let type_mask = department.type_mask.map_or(orig.type_mask, |t| t);
 
     const UPDATE_QUERY: &str = r#"
         UPDATE departments SET 
@@ -286,7 +277,7 @@ pub(crate) async fn department_update(
             address = $3,
             owner = $4,
             telephone = $5,
-            type_id = $6,
+            type_mask = $6,
             shorten = $7
         WHERE id = $8 RETURNING id;"#;
     let fetch_one: Result<(i32,), _> = sqlx::query_as(UPDATE_QUERY)
@@ -295,7 +286,7 @@ pub(crate) async fn department_update(
         .bind(address)
         .bind(owner)
         .bind(telephone)
-        .bind(type_id)
+        .bind(type_mask)
         .bind(&shorten)
         .bind(orig.id)
         .fetch_one(&database)
@@ -437,10 +428,9 @@ pub(crate) async fn department_list_request(
             store_name,
             owner,
             telephone,
-            t.name AS type_id,
+            type_mask,
             address
         FROM departments d
-            LEFT JOIN department_types t ON t.id = d.type_id
         LIMIT $1 OFFSET $2;
     "#;
 
@@ -452,15 +442,11 @@ pub(crate) async fn department_list_request(
     {
         let mut infos: Vec<DepartmentInfo> = Vec::new();
 
-        loop {
-            if let Some(d) = departments.pop() {
-                let parents = query_parent_shorten(&database, d.id).await;
-                let childs = query_childs(&database, d.id).await;
-                let info = DepartmentInfo::from((d, parents, childs));
-                infos.push(info);
-            } else {
-                break;
-            }
+        while let Some(d) = departments.pop() {
+            let parents = query_parent_shorten(&database, d.id).await;
+            let childs = query_childs(&database, d.id).await;
+            let info = DepartmentInfo::from((d, parents, childs));
+            infos.push(info);
         }
 
         resp.departments = Some(infos);
@@ -493,25 +479,13 @@ pub(crate) async fn department_create(
         return (StatusCode::OK, Json(resp)).into_response();
     };
 
-    let type_id = match department.type_id {
-        Some(type_id) => match department_type_or_insert(&database, &type_id).await {
-            Ok(id) => Some(id),
-            Err(e) => {
-                resp.update(500, Some(format!("{e}")));
-                error!("{:?}", &resp);
-                return (StatusCode::OK, Json(resp)).into_response();
-            }
-        },
-        None => None,
-    };
-
     const INSERT_QUERY: &str = r#"
         INSERT INTO departments (
             shorten,
             store_name,
             owner,
             telephone,
-            type_id,
+            type_mask,
             address
         ) VALUES (
             $1, $2, $3, $4, $5, $6
@@ -521,7 +495,7 @@ pub(crate) async fn department_create(
         .bind(department.store_name)
         .bind(department.owner)
         .bind(department.telephone)
-        .bind(type_id)
+        .bind(department.type_mask)
         .bind(department.address)
         .fetch_one(&database)
         .await;
@@ -696,11 +670,6 @@ pub(crate) async fn department_org_request(
 async fn query_department(database: &Database, shorten: &str) -> Option<DepartmentInfo> {
     match query_raw_department(database, shorten).await {
         Some(raw) => {
-            let department_type = match raw.type_id {
-                Some(id) => query_department_type(database, id).await.map(|t| t.name),
-                None => None,
-            };
-
             let parents = query_parent_shorten(database, raw.id).await;
             let childs = query_childs(database, raw.id).await;
             Some(DepartmentInfo {
@@ -711,7 +680,7 @@ async fn query_department(database: &Database, shorten: &str) -> Option<Departme
                 owner: raw.owner,
                 telephone: raw.telephone,
                 address: raw.address,
-                type_id: department_type,
+                type_mask: raw.type_mask,
                 parents,
                 childs,
             })
@@ -803,20 +772,6 @@ pub(crate) async fn department_name_or_insert(database: &Database, name: &str) -
 }
 
 #[allow(dead_code)]
-async fn query_department_type(database: &Database, id: i32) -> Option<DepartmentTypeRaw> {
-    const QUERY: &str = "SELECT * FROM department_types WHERE id = $1;";
-
-    match sqlx::query_as::<_, DepartmentTypeRaw>(QUERY)
-        .bind(id)
-        .fetch_optional(database)
-        .await
-    {
-        Ok(res) => res,
-        _ => None,
-    }
-}
-
-#[allow(dead_code)]
 async fn query_parent_shorten(database: &Database, id: i32) -> Option<Vec<DepartmentOrg>> {
     const QUERY: &str = r#"
         SELECT
@@ -880,37 +835,6 @@ async fn query_childs(database: &Database, pid: i32) -> Option<Vec<DepartmentOrg
     match row {
         Ok(r) => Some(r),
         Err(_) => None,
-    }
-}
-
-#[allow(dead_code)]
-pub(crate) async fn department_type_or_insert(database: &Database, name: &str) -> Result<i32> {
-    const QUERY: &str = "SELECT id FROM department_types WHERE name = $1;";
-    let d_type: Option<(i32,)> = sqlx::query_as(QUERY)
-        .bind(name)
-        .fetch_optional(database)
-        .await
-        .unwrap();
-
-    if let Some((id,)) = d_type {
-        Ok(id)
-    } else {
-        const INSERT_QUERY: &str = r#"
-            INSERT INTO department_types (
-                name
-            ) VALUES (
-                $1
-            ) RETURNING id;
-        "#;
-        let fetch_one = sqlx::query_as(INSERT_QUERY)
-            .bind(name)
-            .fetch_one(database)
-            .await;
-
-        match fetch_one {
-            Ok((d_type,)) => Ok(d_type),
-            Err(err) => Err(anyhow!("insert department-type fail - {err}")),
-        }
     }
 }
 

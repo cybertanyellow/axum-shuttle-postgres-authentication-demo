@@ -17,12 +17,12 @@ CREATE TABLE IF NOT EXISTS titles (
     name text NOT NULL UNIQUE           -- 職稱
 );
 
-CREATE TABLE IF NOT EXISTS department_types (
-    id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    name text NOT NULL UNIQUE           -- 維保中心,營業點,總部,其他
-);
-INSERT INTO department_types ( name ) VALUES ( '總部' )
-ON CONFLICT (name) DO NOTHING;
+-- CREATE TABLE IF NOT EXISTS department_types (
+--     id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+--     name text NOT NULL UNIQUE           -- 維保中心,營業點,總部,其他
+-- );
+-- INSERT INTO department_types ( name ) VALUES ( '總部' )
+-- ON CONFLICT (name) DO NOTHING;
 
 -- 部門(涵 門市&維保中心)
 CREATE TABLE IF NOT EXISTS departments (
@@ -35,11 +35,9 @@ CREATE TABLE IF NOT EXISTS departments (
     owner text,                         -- 負責人
     telephone text,                     -- 門市電話
     address text,                       -- 門市地址
-    type_id integer REFERENCES department_types (id) ON DELETE CASCADE
+    type_mask bit(8)
 );
-INSERT INTO departments 
-( shorten, store_name, type_id )
-VALUES ( 'ADM', '總部', ( SELECT id FROM department_types WHERE name = '總部' ) )
+INSERT INTO departments ( shorten, store_name, type_mask ) VALUES ( 'ADM', '總部', b'10000000')
 ON CONFLICT (shorten) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS department_orgs (

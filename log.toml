@@ -561,6 +561,54 @@ curl -H 'Content-Type: application/json' --cookie 'user_token=293235454743220836
     ]
 }
 
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=306333113601657959018076325298618669536' http://127.0.0.1:8000/api/v1/department -s -d '{"shorten":"JSHall2","store_name":"taiwan jshall2 in taichuang","type_mask":{"storage":[2],"nbits":8},"parents":["ADM"]}'
+{"code":200,"message":"department2 create success"}⏎
+┌─────────────────────────────────────────
+│axum-shuttle-postgres-authentication-demo via 🦀 v1.66.0 is 📦 v0.1.0 on  dcare-rest-service
+└─> curl -H 'Content-Type: application/json' http://127.0.0.1:8000/api/v1/department -s | jq
+{
+  "code": 200,
+  "departments": [
+    {
+      "create_at": "2023-01-31T02:41:30.088419Z",
+      "update_at": null,
+      "shorten": "JSHall2",
+      "store_name": "taiwan jshall2 in taichuang",
+      "owner": null,
+      "telephone": null,
+      "address": null,
+      "type_mask": {
+        "storage": [
+          2
+        ],
+        "nbits": 8
+      },
+      "parents": [
+        "ADM"
+      ],
+      "childs": []
+    },
+    {
+      "create_at": "2023-01-31T02:34:22.678448Z",
+      "update_at": null,
+      "shorten": "ADM",
+      "store_name": "總部",
+      "owner": null,
+      "telephone": null,
+      "address": null,
+      "type_mask": {
+        "storage": [
+          1
+        ],
+        "nbits": 8
+      },
+      "parents": [],
+      "childs": [
+        "JSHall2"
+      ]
+    }
+  ]
+}
 
 ## users
 
