@@ -3,6 +3,16 @@ docker run --rm -it postgres:15.1-alpine psql -U user-dcare-rest-service -W eVWD
 or
 run `docker exec -it shuttle_dcare-rest-service_shared_postgres bash` to find psql
 
+Starting dcare-rest-service on http://127.0.0.1:8000
+DB ready can be reached at postgres://postgres:postgres@localhost:17103/postgres
+
+```shell
+└─> cargo run -F main -- --url postgres://user-dcare-rest-service:yH1Hh2AtsRtb@db.shuttle.rs:5432/db-dcare-rest-service
+   Compiling dcare-rest-service v0.2.1 (/home/yellow/source/axum-shuttle-postgres-authentication-demo)
+    Finished dev [unoptimized + debuginfo] target(s) in 8.81s
+     Running `target/debug/dcare-rest-service --url 'postgres://user-dcare-rest-service:yH1Hh2AtsRtb@db.shuttle.rs:5432/db-dcare-rest-service'`
+```
+
 run `psql -U postgres` into cli
 ```sh
 psql (11.16 (Debian 11.16-1.pgdg90+1))

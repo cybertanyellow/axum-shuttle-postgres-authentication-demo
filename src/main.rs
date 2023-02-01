@@ -10,7 +10,7 @@ pub async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| "example_tokio_postgres=debug".into()),
+            .unwrap_or_else(|_| "dcare-rest-service=debug".into()),
             )
         .with(tracing_subscriber::fmt::layer())
         .init();
