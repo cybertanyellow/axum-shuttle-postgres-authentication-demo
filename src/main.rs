@@ -4,9 +4,10 @@ use anyhow::Result;
 use dcare_rest_service::get_router;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use sqlx::postgres::{/*PgPool, */PgPoolOptions};
+use lambda_web::{is_running_on_lambda, run_hyper_on_lambda, LambdaError};
 
 #[tokio::main]
-pub async fn main() -> Result<()> {
+pub async fn main() -> Result<(), LambdaError> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -30,13 +31,17 @@ pub async fn main() -> Result<()> {
         .await
         .expect("can't connect to database");
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    tracing::debug!("listening on {}", addr);
     let app = get_router(pool);
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+
+    if is_running_on_lambda() {
+        run_hyper_on_lambda(app).await?;
+    } else {
+        let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+        tracing::debug!("listening on {}", addr);
+        axum::Server::bind(&addr)
+            .serve(app.into_make_service())
+            .await?;
+    }
 
     Ok(())
 }
