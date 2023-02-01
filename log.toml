@@ -646,6 +646,71 @@ curl -H 'Content-Type: application/json' --cookie 'user_token=293235454743220836
 
 ```
 
+└─> curl -H 'Content-Type: application/json' http://127.0.0.1:8000/api/v1/user -d '{"account":"bbb","password":"fy90676855","confirm_password":"fy90676855","permission":{"storage":[4],"nbits":8},"username":"maintainer","worker_id":"aa00003","title":"maintainer","department":"NONEXIST","phone":"0800","email":"bbb@fika.com"}'
+{"code":500,"message":"department/shorten/NONEXIST not found"}⏎
+
+└─> curl -H 'Content-Type: application/json' http://127.0.0.1:8000/api/v1/user -d '{"account":"bbb","password":"fy90676855","confirm_password":"fy90676855","permission":{"storage":[4],"nbits":8},"username":"maintainer","worker_id":"aa00003","title":"maintainer","department":"ADM","phone":"0800","email":"bbb@fika.com"}'
+{"code":200,"message":"success"}⏎
+┌─────────────────────────────────────────
+│axum-shuttle-postgres-authentication-demo via 🦀 v1.66.0 is 📦 v0.2.0 on  dcare-rest-service
+└─> curl -H 'Content-Type: application/json' http://127.0.0.1:8000/api/v1/user -s | jq
+{
+  "code": 200,
+  "users": [
+    {
+      "account": "administrator",
+      "permission": {
+        "storage": [
+          1
+        ],
+        "nbits": 8
+      },
+      "username": "administrator",
+      "worker_id": "aa00001",
+      "title": "administrator",
+      "department": "總部",
+      "phone": "0800",
+      "email": "admin@fika.com",
+      "create_at": "2023-01-31T02:36:57.914862Z",
+      "login_at": "2023-01-31T02:38:50.927493Z"
+    },
+    {
+      "account": "aaa",
+      "permission": {
+        "storage": [
+          4
+        ],
+        "nbits": 8
+      },
+      "username": "maintainer",
+      "worker_id": "aa00002",
+      "title": "maintainer",
+      "department": "taiwan jshall2 in taichuang",
+      "phone": "0800",
+      "email": "aaa@fika.com",
+      "create_at": "2023-01-31T05:25:28.985247Z",
+      "login_at": null
+    },
+    {
+      "account": "bbb",
+      "permission": {
+        "storage": [
+          4
+        ],
+        "nbits": 8
+      },
+      "username": "maintainer",
+      "worker_id": "aa00003",
+      "title": "maintainer",
+      "department": "總部",
+      "phone": "0800",
+      "email": "bbb@fika.com",
+      "create_at": "2023-02-01T03:25:16.834117Z",
+      "login_at": null
+    }
+  ]
+}
+
 ## orders
 
 └─> curl -H 'Content-Type: application/json' --cookie 'user_token=254971077791281876651467273292106090338' http://127.0.0.1:8000/api/v1/order -s -d '{"customer_phone":"phone1","brand":"brand1","appearance":{"storage":[2],"nbits":8},"status":"check"}'
@@ -862,3 +927,11 @@ Failed to deserialize the JSON body into the target type: .: missing field `depa
 }
 └─> curl -H 'Content-Type: application/json' http://127.0.0.1:8000/api/v1/user/aaa -X DELETE
 {"code":400,"message":"reject due to order/JSHall2301310300060 related"}⏎
+
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=306333113601657959018076325298618669536' http://127.0.0.1:8000/api/v1/order -s -d '{"customer_phone":"phone4","brand":"brand1","appearance":{"storage":[3],"nbits":8},"status":"check","department":"總部"}'
+{"code":500,"message":"department/shorten/總部 not found"}⏎
+┌─────────────────────────────────────────
+│axum-shuttle-postgres-authentication-demo via 🦀 v1.66.0 is 📦 v0.2.0 on  dcare-rest-service
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=306333113601657959018076325298618669536' http://127.0.0.1:8000/api/v1/order -s -d '{"customer_phone":"phone4","brand":"brand1","appearance":{"storage":[3],"nbits":8},"status":"check","department":"ADM"}'
+{"code":200,"message":"order8 create success"}⏎
+

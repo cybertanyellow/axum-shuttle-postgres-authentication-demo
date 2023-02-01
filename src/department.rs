@@ -17,7 +17,7 @@ use tracing::{
     info,
 };
 use utoipa::{IntoParams, ToSchema};
-use uuid::Uuid;
+//use uuid::Uuid;
 //use sqlx::{
 //Row,
 //postgres::PgRow,
@@ -746,7 +746,7 @@ pub(crate) async fn department_shorten_or_insert(
     }
 }
 
-pub(crate) async fn department_name_or_insert(database: &Database, name: &str) -> Result<i32> {
+/*pub(crate) async fn department_name_or_insert(database: &Database, name: &str) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM departments WHERE store_name = $1;";
     let department: Option<(i32,)> = sqlx::query_as(QUERY)
         .bind(name)
@@ -777,6 +777,24 @@ pub(crate) async fn department_name_or_insert(database: &Database, name: &str) -
             Ok((department_id,)) => Ok(department_id),
             Err(err) => Err(anyhow!("insert department fail - {err}")),
         }
+    }
+}*/
+
+pub(crate) async fn department_shorten_query(
+    database: &Database,
+    shorten: &str
+) -> Result<i32> {
+    const QUERY: &str = "SELECT id FROM departments WHERE shorten = $1;";
+    let department: Option<(i32,)> = sqlx::query_as(QUERY)
+        .bind(shorten)
+        .fetch_optional(database)
+        .await
+        .unwrap();
+
+    if let Some((id,)) = department {
+        Ok(id)
+    } else {
+        Err(anyhow!("department/shorten/{shorten} not found"))
     }
 }
 

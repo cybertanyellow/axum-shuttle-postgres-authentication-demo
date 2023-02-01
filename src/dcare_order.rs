@@ -17,7 +17,7 @@ use utoipa::{IntoParams, ToSchema};
 use crate::authentication::AuthState;
 
 use crate::dcare_user::query_user_id;
-use crate::department::department_name_or_insert;
+use crate::department::department_shorten_query;
 use crate::errors::NotLoggedIn;
 use crate::{ApiResponse, Database, Pagination, Random};
 
@@ -102,7 +102,7 @@ pub struct OrderInfo {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct OrderUpdate {
-    #[schema(example = "department's store_name")]
+    #[schema(example = "department's shorten as ADM, BM, ...")]
     department: Option<String>,
     customer_address: Option<String>,
 
@@ -130,7 +130,7 @@ pub struct OrderUpdate {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
 pub struct OrderNew {
-    #[schema(example = "department's store_name")]
+    #[schema(example = "department's shorten as ADM, BM, ...")]
     department: String,
     #[schema(example = "user's account")]
     contact: Option<String>,
@@ -266,10 +266,10 @@ pub(crate) async fn order_update(
     };
 
     let department_id = match order.department {
-        Some(department) => match department_name_or_insert(&database, &department).await {
+        Some(department) => match department_shorten_query(&database, &department).await {
             Ok(id) => Some(id),
             Err(e) => {
-                resp.update(500, Some(format!("{e}")));
+                resp.update(404, Some(format!("{e}")));
                 error!("{:?}", &resp);
                 return (StatusCode::OK, Json(resp)).into_response();
             }
@@ -599,10 +599,10 @@ pub(crate) async fn order_create(
         None /* super user? */
     };
 
-    let department_id = match department_name_or_insert(&database, &order.department).await {
+    let department_id = match department_shorten_query(&database, &order.department).await {
         Ok(id) => Some(id),
         Err(e) => {
-            resp.update(500, Some(format!("{e}")));
+            resp.update(404, Some(format!("{e}")));
             error!("{:?}", &resp);
             return (StatusCode::OK, Json(resp)).into_response();
         }

@@ -27,7 +27,7 @@ use crate::authentication::{
 use crate::errors::NotLoggedIn;
 //use crate::errors::{LoginError, NoUser, SignupError};
 use crate::dcare_order::query_order_by_user_id;
-use crate::department::department_name_or_insert;
+use crate::department::department_shorten_query;
 use crate::{ApiResponse, Database, Pagination, Random, COOKIE_MAX_AGE, USER_COOKIE_NAME};
 
 async fn title_id_or_insert(database: &Database, name: &str) -> Result<i32> {
@@ -188,6 +188,7 @@ pub struct UserNew {
     username: String,
     worker_id: String,
     title: Option<String>,
+    #[schema(example = "department's shorten as ADM, BM, ...")]
     department: Option<String>,
     phone: String,
     email: String,
@@ -242,11 +243,11 @@ pub(crate) async fn post_signup_api(
     };
 
     let department_id = match user.department {
-        Some(department) => match department_name_or_insert(&database, &department).await {
+        Some(department) => match department_shorten_query(&database, &department).await {
             Ok(id) => Some(id),
             Err(e) => {
                 resp.message = Some(format!("{e}"));
-                resp.code = 500;
+                resp.code = 404;
                 error!("{:?}", &resp);
                 return (StatusCode::OK, Json(resp)).into_response();
             }
@@ -700,6 +701,7 @@ pub struct UpdateUser {
     username: Option<String>,
     worker_id: Option<String>,
     title: Option<String>,
+    #[schema(example = "department's shorten as ADM, BM, ...")]
     department: Option<String>,
     phone: Option<String>,
     email: Option<String>,
@@ -840,11 +842,11 @@ pub(crate) async fn update_user_api(
     };
 
     let department_id = if let Some(department) = user.department {
-        match department_name_or_insert(&database, &department).await {
+        match department_shorten_query(&database, &department).await {
             Ok(did) => Some(did),
             Err(e) => {
-                resp.message = Some(format!("department-id fail {e}"));
-                resp.code = 500;
+                resp.message = Some(format!("{e}"));
+                resp.code = 404;
                 error!("{:?}", &resp);
                 return (StatusCode::OK, Json(resp)).into_response();
             }
