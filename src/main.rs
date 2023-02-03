@@ -1,5 +1,4 @@
 use std::{net::SocketAddr/*, time::Duration*/};
-use clap::Parser;
 use anyhow::Result;
 use dcare_rest_service::get_router;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -17,11 +16,8 @@ pub async fn main() -> Result<(), LambdaError> {
         .init();
 
 
-    let cli = Cli::parse();
-    //let _port = cli.port.unwrap_or(8000);
-
-    let db_connection_str = cli.url
-        .unwrap_or("postgres://postgres:password@localhost".to_string());
+    let db_connection_str = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:password@localhost".to_string());
 
     // setup connection pool
     let pool = PgPoolOptions::new()
@@ -44,13 +40,4 @@ pub async fn main() -> Result<(), LambdaError> {
     }
 
     Ok(())
-}
-
-#[derive(Parser, Debug)]
-#[clap(name = "dcare-rest-service", version, author, about = "A Dcare Rest Service without DB")]
-struct Cli {
-    #[clap(long)]
-    url: Option<String>,
-    #[clap(long)]
-    port: Option<u16>,
 }

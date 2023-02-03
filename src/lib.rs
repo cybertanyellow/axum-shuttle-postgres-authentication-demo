@@ -23,8 +23,6 @@ use pbkdf2::password_hash::rand_core::OsRng;
 use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
-use shuttle_service::{error::CustomError, ShuttleAxum};
-use sqlx::Executor;
 use tera::{Context, Tera};
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
@@ -84,15 +82,6 @@ impl ApiResponse {
         self.message = message;
         self
     }
-}
-
-#[shuttle_service::main]
-async fn server(#[shuttle_shared_db::Postgres] pool: Database) -> ShuttleAxum {
-    pool.execute(include_str!("../schema.sql"))
-        .await
-        .map_err(CustomError::new)?;
-
-    Ok(sync_wrapper::SyncWrapper::new(get_router(pool)))
 }
 
 pub fn get_router(database: Database) -> Router {
