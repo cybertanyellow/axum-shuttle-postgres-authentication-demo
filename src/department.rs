@@ -8,7 +8,7 @@ use axum::{
 
 use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, NaiveDate};
 use serde::{Deserialize, Serialize};
 //use serde_json::json;
 use tracing::{
@@ -32,6 +32,135 @@ use crate::{ApiResponse, Database, Pagination};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 struct DepartmentOrg(String);
+
+#[derive(Deserialize, IntoParams)]
+pub struct DepartmentListQuery {
+    offset: Option<i32>,
+    entries: Option<i32>,
+
+    shorten: Option<String>,
+    store_name: Option<String>,
+    owner: Option<String>,
+    telephone: Option<String>,
+    address: Option<String>,
+    type_mask: Option<BitVec>,
+    create_start: Option<NaiveDate>,
+    create_end: Option<NaiveDate>,
+    update_start: Option<NaiveDate>,
+    update_end: Option<NaiveDate>,
+}
+
+impl DepartmentListQuery {
+    pub fn parse(mine: Option<Query<Self>>) -> (i32, i32, String) {
+        if let Some(ref q) = mine {
+            let offset = q.offset
+                .map_or(0, |o| o);
+            let entries = q.entries
+                .map_or(100, |e| e);
+
+            let where_is = if let Some(ref p) = q.telephone {
+                format!("WHERE o.telephone = '{p}'")
+            } else {
+                "".to_string()
+            };
+            let where_is = if let Some(ref s) = q.shorten {
+                let sql_d = format!("o.shorten = '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql_d}")
+                } else {
+                    format!("{where_is} AND {sql_d}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.store_name {
+                let sql_d = format!("o.store_name = '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql_d}")
+                } else {
+                    format!("{where_is} AND {sql_d}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.owner {
+                let sql_d = format!("o.owner = '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql_d}")
+                } else {
+                    format!("{where_is} AND {sql_d}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.address {
+                let sql_d = format!("o.address = '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql_d}")
+                } else {
+                    format!("{where_is} AND {sql_d}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.type_mask {
+                let sql_d = format!("o.type_mask & {:?}", s);
+                if where_is.is_empty() {
+                    format!("WHERE {sql_d}")
+                } else {
+                    format!("{where_is} AND {sql_d}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.create_start {
+                let sql = format!("o.create_at >= '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.create_end {
+                let sql = format!("o.create_at < '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.update_start {
+                let sql = format!("o.update_at >= '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.update_end {
+                let sql = format!("o.update_at < '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+
+
+            (offset, entries, where_is)
+        } else {
+            (0, 100, "".to_string())
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 struct DepartmentOrgRaw {
@@ -411,7 +540,7 @@ pub(crate) async fn department_delete(
     get,
     path = "/api/v1/department",
     params(
-        Pagination
+        DepartmentListQuery
     ),
     responses(
         (status = 200, description = "get department list", body = DepartmentsResponse)
@@ -419,16 +548,16 @@ pub(crate) async fn department_delete(
 )]
 pub(crate) async fn department_list_request(
     Extension(database): Extension<Database>,
-    pagination: Option<Query<Pagination>>,
+    query: Option<Query<DepartmentListQuery>>,
 ) -> impl IntoResponse {
     let mut resp = DepartmentsResponse {
         code: 400,
         departments: None,
     };
 
-    let (offset, entries) = Pagination::parse(pagination);
+    let (offset, entries, where_dep) = DepartmentListQuery::parse(query);
 
-    const QUERY: &str = r#"
+    let sselect = format!(r#"
         SELECT
             d.id,
             create_at,
@@ -440,12 +569,10 @@ pub(crate) async fn department_list_request(
             type_mask,
             address
         FROM departments d
-        LIMIT $1 OFFSET $2;
-    "#;
+        {where_dep} LIMIT {entries} OFFSET {offset};
+    "#);
 
-    if let Ok(mut departments) = sqlx::query_as::<_, DepartmentInfoPartial>(QUERY)
-        .bind(entries)
-        .bind(offset)
+    if let Ok(mut departments) = sqlx::query_as::<_, DepartmentInfoPartial>(&sselect)
         .fetch_all(&database)
         .await
     {

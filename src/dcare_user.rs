@@ -14,7 +14,7 @@ use http::Response;
 
 use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, NaiveDate};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, error, info};
@@ -28,7 +28,170 @@ use crate::errors::NotLoggedIn;
 //use crate::errors::{LoginError, NoUser, SignupError};
 use crate::dcare_order::query_order_by_user_id;
 use crate::department::department_shorten_query;
-use crate::{ApiResponse, Database, Pagination, Random, COOKIE_MAX_AGE, USER_COOKIE_NAME};
+use crate::{ApiResponse, Database, Random, COOKIE_MAX_AGE, USER_COOKIE_NAME};
+
+#[derive(Deserialize, IntoParams)]
+pub struct UserListQuery {
+    offset: Option<i32>,
+    entries: Option<i32>,
+
+    permission: Option<BitVec>,
+    username: Option<String>,
+    worker_id: Option<String>,
+    title: Option<String>,
+    department: Option<String>,
+    phone: Option<String>,
+    email: Option<String>,
+    create_start: Option<NaiveDate>,
+    create_end: Option<NaiveDate>,
+    login_start: Option<NaiveDate>,
+    login_end: Option<NaiveDate>,
+    update_start: Option<NaiveDate>,
+    update_end: Option<NaiveDate>,
+}
+
+impl UserListQuery {
+    pub fn parse(mine: Option<Query<Self>>) -> (i32, i32, String) {
+        if let Some(ref q) = mine {
+            let offset = q.offset
+                .map_or(0, |o| o);
+            let entries = q.entries
+                .map_or(100, |e| e);
+
+            let where_is = if let Some(ref p) = q.phone {
+                format!("WHERE u.customer_phone = '{p}'")
+            } else {
+                "".to_string()
+            };
+            let where_is = if let Some(ref d) = q.department {
+                let sql_d = format!("u.department_id = (SELECT id FROM departments WHERE shorten = '{d}')");
+                if where_is.is_empty() {
+                    format!("WHERE {sql_d}")
+                } else {
+                    format!("{where_is} AND {sql_d}")
+                }
+            } else {
+                where_is
+            };
+            /* TODO permission which serde to? */
+            let where_is = if let Some(ref p) = q.permission {
+                let sql_u = format!("u.permission & {:?}", p);
+                if where_is.is_empty() {
+                    format!("WHERE {sql_u}")
+                } else {
+                    format!("{where_is} AND {sql_u}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref u) = q.username {
+                let sql_u = format!("u.username = '{u}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql_u}")
+                } else {
+                    format!("{where_is} AND {sql_u}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref u) = q.worker_id {
+                let sql_u = format!("u.work_id = '{u}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql_u}")
+                } else {
+                    format!("{where_is} AND {sql_u}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref t) = q.title {
+                let sql = format!("u.title_id = (SELECT id FROM titles WHERE name = '{t}')");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref e) = q.email {
+                let sql_u = format!("u.email = '{e}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql_u}")
+                } else {
+                    format!("{where_is} AND {sql_u}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.create_start {
+                let sql = format!("u.create_at >= '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.create_end {
+                let sql = format!("u.create_at < '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.login_start {
+                let sql = format!("u.login_at >= '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.login_end {
+                let sql = format!("u.login_at < '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.update_start {
+                let sql = format!("u.update_at >= '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.update_end {
+                let sql = format!("u.update_at < '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+
+
+            (offset, entries, where_is)
+        } else {
+            (0, 100, "".to_string())
+        }
+    }
+}
 
 async fn title_id_or_insert(database: &Database, name: &str) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM titles WHERE name = $1;";
@@ -487,7 +650,7 @@ pub struct ResponseUsers {
     get,
     path = "/api/v1/user",
     params(
-        Pagination
+        UserListQuery
     ),
     responses(
         (status = 200, description = "get user list", body = ResponseUsers)
@@ -495,11 +658,11 @@ pub struct ResponseUsers {
 )]
 pub(crate) async fn users_api(
     Extension(database): Extension<Database>,
-    pagination: Option<Query<Pagination>>,
+    query: Option<Query<UserListQuery>>,
 ) -> impl IntoResponse {
-    let (offset, entries) = Pagination::parse(pagination);
+    let (offset, entries, where_dep) = UserListQuery::parse(query);
 
-    const QUERY: &str = r#"
+    let sselect = format!(r#"
         SELECT
             u.account,
             u.permission,
@@ -513,12 +676,10 @@ pub(crate) async fn users_api(
         FROM users u
             LEFT JOIN titles t ON t.id = u.title_id
             LEFT JOIN departments d ON d.id = u.department_id
-        LIMIT $1 OFFSET $2;
-    "#;
+        {where_dep} LIMIT {entries} OFFSET {offset};
+    "#);
 
-    if let Ok(users) = sqlx::query_as::<_, UserInfo>(QUERY)
-        .bind(entries)
-        .bind(offset)
+    if let Ok(users) = sqlx::query_as::<_, UserInfo>(&sselect)
         .fetch_all(&database)
         .await
     {
