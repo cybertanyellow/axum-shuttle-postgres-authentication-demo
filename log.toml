@@ -935,3 +935,63 @@ Failed to deserialize the JSON body into the target type: .: missing field `depa
 └─> curl -H 'Content-Type: application/json' --cookie 'user_token=306333113601657959018076325298618669536' http://127.0.0.1:8000/api/v1/order -s -d '{"customer_phone":"phone4","brand":"brand1","appearance":{"storage":[3],"nbits":8},"status":"check","department":"ADM"}'
 {"code":200,"message":"order8 create success"}⏎
 
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=306333113601657959018076325298618669536' http://127.0.0.1:8000/api/v1/order -s -d '{"customer_phone":"0911123123","brand":"brand1","appearance":{"storage":[3],"nbits":8},"status":"clean","department":"JSHall2"}'
+{"code":200,"message":"order9 create success","sn":"JSHall2302060500090","customer_phone":"0911123123"}⏎
+┌─────────────────────────────────────────
+│axum-shuttle-postgres-authentication-demo via 🦀 v1.66.0 is 📦 v0.2.0 on  dcare-rest-service
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=306333113601657959018076325298618669536' 'http://127.0.0.1:8000/api/v1/order?' -s | jq^C
+┌─────────────────────────────────────────
+│axum-shuttle-postgres-authentication-demo via 🦀 v1.66.0 is 📦 v0.2.0 on  dcare-rest-service
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=306333113601657959018076325298618669536' 'http://127.0.0.1:8000/api/v1/order?issue_start=2023-02-01' -s | jq
+{
+  "code": 200,
+  "orders": [
+    {
+      "sn": "ADM302010300080",
+      "issue_at": "2023-02-01T03:27:06.602888Z",
+      "department": "總部",
+      "contact": null,
+      "customer_name": null,
+      "customer_phone": "phone4",
+      "service": null,
+      "cost": null,
+      "status": "check",
+      "servicer": null,
+      "maintainer": null
+    },
+    {
+      "sn": "JSHall2302060500090",
+      "issue_at": "2023-02-06T05:33:57.821795Z",
+      "department": "taiwan jshall2 in taichuang",
+      "contact": null,
+      "customer_name": null,
+      "customer_phone": "0911123123",
+      "service": null,
+      "cost": null,
+      "status": "clean",
+      "servicer": null,
+      "maintainer": null
+    }
+  ]
+}
+┌─────────────────────────────────────────
+│axum-shuttle-postgres-authentication-demo via 🦀 v1.66.0 is 📦 v0.2.0 on  dcare-rest-service
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=306333113601657959018076325298618669536' 'http://127.0.0.1:8000/api/v1/order?issue_start=2023-02-01&phone=0911123123' -s | jq
+{
+  "code": 200,
+  "orders": [
+    {
+      "sn": "JSHall2302060500090",
+      "issue_at": "2023-02-06T05:33:57.821795Z",
+      "department": "taiwan jshall2 in taichuang",
+      "contact": null,
+      "customer_name": null,
+      "customer_phone": "0911123123",
+      "service": null,
+      "cost": null,
+      "status": "clean",
+      "servicer": null,
+      "maintainer": null
+    }
+  ]
+}

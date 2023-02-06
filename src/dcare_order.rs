@@ -11,7 +11,10 @@ use bit_vec::BitVec;
 use chrono::{DateTime, Datelike, NaiveDate, Timelike, Utc};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 //use serde_json::json;
-use tracing::error;
+use tracing::{
+    error,
+    //info
+};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::authentication::AuthState;
@@ -19,9 +22,156 @@ use crate::authentication::AuthState;
 use crate::dcare_user::query_user_id;
 use crate::department::department_shorten_query;
 use crate::errors::NotLoggedIn;
-use crate::{ApiResponse, Database, Pagination, Random};
+use crate::{ApiResponse, Database, Random};
 
 type Price = i32;
+
+#[derive(Deserialize, IntoParams)]
+pub struct OrderListQuery {
+    offset: Option<i32>,
+    entries: Option<i32>,
+    department: Option<String>,
+    contact: Option<String>,
+    phone: Option<String>,
+    servicer: Option<String>,
+    maintainer: Option<String>,
+    status: Option<String>,
+    issue_start: Option<NaiveDate>,
+    issue_end: Option<NaiveDate>,
+}
+
+impl OrderListQuery {
+    pub fn parse(mine: Option<Query<Self>>) -> (i32, i32, String) {
+        if let Some(ref q) = mine {
+            let offset = q.offset
+                .map_or(0, |o| o);
+            let entries = q.entries
+                .map_or(100, |e| e);
+
+            let where_is = if let Some(ref p) = q.phone {
+                format!("WHERE o.customer_phone = '{p}'")
+            } else {
+                "".to_string()
+            };
+            let where_is = if let Some(ref d) = q.department {
+                let sql_d = format!("o.department_id = (SELECT id FROM departments WHERE shorten = '{d}')");
+                if where_is.is_empty() {
+                    format!("WHERE {sql_d}")
+                } else {
+                    format!("{where_is} AND {sql_d}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref u) = q.contact {
+                let sql_u = format!("o.contact_id = (SELECT id FROM users WHERE account = '{u}')");
+                if where_is.is_empty() {
+                    format!("WHERE {sql_u}")
+                } else {
+                    format!("{where_is} AND {sql_u}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref u) = q.servicer {
+                let sql_u = format!("o.contact_id = (SELECT id FROM users WHERE account = '{u}')");
+                if where_is.is_empty() {
+                    format!("WHERE {sql_u}")
+                } else {
+                    format!("{where_is} AND {sql_u}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref u) = q.maintainer {
+                let sql_u = format!("o.contact_id = (SELECT id FROM users WHERE account = '{u}')");
+                if where_is.is_empty() {
+                    format!("WHERE {sql_u}")
+                } else {
+                    format!("{where_is} AND {sql_u}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.status {
+                let sql = format!("o.status_id = (SELECT id FROM status WHERE flow = '{s}')");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.issue_start {
+                let sql = format!("o.issue_at >= '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.issue_end {
+                let sql = format!("o.issue_at < '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+
+
+            (offset, entries, where_is)
+        } else {
+            (0, 100, "".to_string())
+        }
+    }
+}
+
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams, Default)]
+pub struct OrderApiResponse {
+    code: u16,
+    message: Option<String>,
+    sn: Option<String>,
+    customer_phone: Option<String>,
+}
+
+impl OrderApiResponse {
+    pub fn new(code: u16, message: Option<String>) -> Self {
+        Self {
+            code,
+            message,
+            sn: None,
+            customer_phone: None,
+        }
+    }
+
+    pub fn update(
+        &mut self,
+        code: u16,
+        message: Option<String>,
+        sn: Option<String>,
+        customer_phone: Option<String>,
+    ) -> &mut Self {
+        self.code = code;
+        if message.is_some() {
+            self.message = message;
+        }
+        if sn.is_some() {
+            self.sn = sn;
+        }
+        if customer_phone.is_some() {
+            self.customer_phone = customer_phone;
+        }
+        self
+    }
+}
+
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 struct OrderDeleteRes {
@@ -104,6 +254,8 @@ pub struct OrderInfo {
 pub struct OrderUpdate {
     #[schema(example = "department's shorten as ADM, BM, ...")]
     department: Option<String>,
+    customer_name: Option<String>,
+    customer_phone: Option<String>,
     customer_address: Option<String>,
 
     accessory1: Option<String>,
@@ -231,10 +383,10 @@ pub(crate) async fn order_request(
     ),
     request_body = OrderUpdate,
     responses(
-        (status = 200, description = "update success", body = ApiResponse, example = json!(ApiResponse::new(200, Some(String::from("success"))))),
-        (status = 404, description = "order not found, ", body = ApiResponse, example = json!(ApiResponse::new(404, Some(String::from("..."))))),
-        (status = 405, description = "permission deny, ", body = ApiResponse, example = json!(ApiResponse::new(405, Some(String::from("..."))))),
-        (status = 500, description = "server error, ", body = ApiResponse, example = json!(ApiResponse::new(500, Some(String::from("..."))))),
+        (status = 200, description = "update success", body = OrderApiResponse, example = json!(ApiResponse::new(200, Some(String::from("success"))))),
+        (status = 404, description = "order not found, ", body = OrderApiResponse, example = json!(ApiResponse::new(404, Some(String::from("..."))))),
+        (status = 405, description = "permission deny, ", body = OrderApiResponse, example = json!(ApiResponse::new(405, Some(String::from("..."))))),
+        (status = 500, description = "server error, ", body = OrderApiResponse, example = json!(ApiResponse::new(500, Some(String::from("..."))))),
     ),
     security(
         //(), // <-- make optional authentication
@@ -246,22 +398,22 @@ pub(crate) async fn order_update(
     Path(sn): Path<String>,
     Extension(database): Extension<Database>,
     Json(order): Json<OrderUpdate>,
-) -> impl IntoResponse {
-    let mut resp = ApiResponse::new(400, None);
+) -> Json<OrderApiResponse> {
+    let mut resp = OrderApiResponse::new(400, None);
 
     let issuer = if let Some(user) = current_user.get_user().await {
         user
     } else {
-        resp.update(400, Some(format!("{}", &NotLoggedIn)));
-        return (StatusCode::OK, Json(resp)).into_response();
+        resp.update(400, Some(format!("{}", &NotLoggedIn)), None, None);
+        return Json(resp);
     };
 
     let orig = match query_raw_order(&database, &sn).await {
         Some(orig) => orig,
         None => {
-            resp.update(404, Some(format!("order/{sn} not found")));
+            resp.update(404, Some(format!("order/{sn} not found")), None, None);
             error!("{:?}", &resp);
-            return (StatusCode::OK, Json(resp)).into_response();
+            return Json(resp);
         }
     };
 
@@ -269,9 +421,9 @@ pub(crate) async fn order_update(
         Some(department) => match department_shorten_query(&database, &department).await {
             Ok(id) => Some(id),
             Err(e) => {
-                resp.update(404, Some(format!("{e}")));
+                resp.update(404, Some(format!("{e}")), None, None);
                 error!("{:?}", &resp);
-                return (StatusCode::OK, Json(resp)).into_response();
+                return Json(resp);
             }
         },
         None => orig.department_id,
@@ -281,9 +433,9 @@ pub(crate) async fn order_update(
         Some(ref item) => match accessory_id_or_insert(&database, item, 0).await {
             Ok(id) => Some(id),
             Err(e) => {
-                resp.update(500, Some(format!("{e}")));
+                resp.update(500, Some(format!("{e}")), None, None);
                 error!("{:?}", &resp);
-                return (StatusCode::OK, Json(resp)).into_response();
+                return Json(resp);
             }
         },
         None => orig.accessory_id1,
@@ -293,9 +445,9 @@ pub(crate) async fn order_update(
         Some(ref item) => match accessory_id_or_insert(&database, item, 0).await {
             Ok(id) => Some(id),
             Err(e) => {
-                resp.update(500, Some(format!("{e}")));
+                resp.update(500, Some(format!("{e}")), None, None);
                 error!("{:?}", &resp);
-                return (StatusCode::OK, Json(resp)).into_response();
+                return Json(resp);
             }
         },
         None => orig.accessory_id2,
@@ -313,9 +465,9 @@ pub(crate) async fn order_update(
         Some(ref item) => match fault_id_or_insert(&database, item, 0).await {
             Ok(id) => Some(id),
             Err(e) => {
-                resp.update(500, Some(format!("{e}")));
+                resp.update(500, Some(format!("{e}")), None, None);
                 error!("{:?}", &resp);
-                return (StatusCode::OK, Json(resp)).into_response();
+                return Json(resp);
             }
         },
         None => orig.fault_id1,
@@ -325,9 +477,9 @@ pub(crate) async fn order_update(
         Some(ref item) => match fault_id_or_insert(&database, item, 0).await {
             Ok(id) => Some(id),
             Err(e) => {
-                resp.update(500, Some(format!("{e}")));
+                resp.update(500, Some(format!("{e}")), None, None);
                 error!("{:?}", &resp);
-                return (StatusCode::OK, Json(resp)).into_response();
+                return Json(resp);
             }
         },
         None => orig.fault_id2,
@@ -337,9 +489,9 @@ pub(crate) async fn order_update(
         Some(ref status) => match status_id_or_insert(&database, status).await {
             Ok(id) => Some(id),
             Err(e) => {
-                resp.update(500, Some(format!("{e}")));
+                resp.update(500, Some(format!("{e}")), None, None);
                 error!("{:?}", &resp);
-                return (StatusCode::OK, Json(resp)).into_response();
+                return Json(resp)
             }
         },
         None => orig.status_id,
@@ -349,8 +501,8 @@ pub(crate) async fn order_update(
         match query_user_id(&database, servicer).await {
             Some(id) => Some(id),
             None => {
-                resp.update(400, Some("servicer staff not found".to_string()));
-                return (StatusCode::OK, Json(resp)).into_response();
+                resp.update(400, Some("servicer staff not found".to_string()), None, None);
+                return Json(resp);
             }
         }
     } else {
@@ -361,19 +513,20 @@ pub(crate) async fn order_update(
         match query_user_id(&database, maintainer).await {
             Some(id) => Some(id),
             None => {
-                resp.update(400, Some("maintainer staff not found".to_string()));
-                return (StatusCode::OK, Json(resp)).into_response();
+                resp.update(400, Some("maintainer staff not found".to_string()), None, None);
+                return Json(resp);
             }
         }
     } else {
         orig.maintainer_id
     };
 
-    let customer_address = if order.customer_address.is_some() {
-        order.customer_address
-    } else {
-        orig.customer_address
-    };
+    let customer_address = order.customer_address
+        .or(orig.customer_address);
+    let customer_name = order.customer_name
+        .or(orig.customer_name);
+    let customer_phone = order.customer_phone
+        .map_or(orig.customer_phone, |p| p);
 
     let accessory_other = order.accessory_other.or(orig.accessory_other);
     let service = order.service.or(orig.service);
@@ -388,6 +541,8 @@ pub(crate) async fn order_update(
             UPDATE orders SET 
                 department_id = $1,
                 customer_address = $2,
+                customer_name = $21,
+                customer_phone = $22,
                 accessory_id1 = $3,
                 accessory_id2 = $4,
                 accessory_other = $5,
@@ -438,21 +593,23 @@ pub(crate) async fn order_update(
         .bind(status_id)
         .bind(servicer_id)
         .bind(maintainer_id)
-        .bind(sn)
+        .bind(&sn)
         .bind(issuer.id)
+        .bind(&customer_name)
+        .bind(&customer_phone)
         .fetch_one(&database)
         .await;
 
     match fetch_one {
         Ok((id,)) => {
-            resp.update(200, Some(format!("order update success - history{id}")));
+            resp.update(200, Some(format!("order update success - history{id}")), Some(sn), Some(customer_phone));
         }
         Err(e) => {
-            resp.update(500, Some(format!("{e}")));
+            resp.update(500, Some(format!("{e}")), None, None);
             error!("{:?}", &resp);
         }
     }
-    (StatusCode::OK, Json(resp)).into_response()
+    Json(resp)
 }
 
 #[utoipa::path(
@@ -518,7 +675,7 @@ pub(crate) async fn order_delete(
     get,
     path = "/api/v1/order",
     params(
-        Pagination
+        OrderListQuery,
     ),
     responses(
         (status = 200, description = "get order list", body = OrdersResponse)
@@ -526,16 +683,17 @@ pub(crate) async fn order_delete(
 )]
 pub(crate) async fn order_list_request(
     Extension(database): Extension<Database>,
-    pagination: Option<Query<Pagination>>,
+    query: Option<Query<OrderListQuery>>,
 ) -> impl IntoResponse {
     let mut resp = OrdersResponse {
         code: 400,
         orders: None,
     };
 
-    let (offset, entries) = Pagination::parse(pagination);
+    let (offset, entries, where_dep) = OrderListQuery::parse(query);
+    //info!("[debug] where_dep = {where_dep}");
 
-    const QUERY: &str = r#"
+    let query = format!(r#"
         SELECT
             o.sn,
             o.issue_at,
@@ -554,12 +712,10 @@ pub(crate) async fn order_list_request(
             LEFT JOIN users u1 ON u1.id = o.contact_id
             LEFT JOIN users u2 ON u2.id = o.servicer_id
             LEFT JOIN users u3 ON u3.id = o.maintainer_id
-        LIMIT $1 OFFSET $2;
-    "#;
+        {where_dep} LIMIT {entries} OFFSET {offset};
+    "#);
 
-    if let Ok(orders) = sqlx::query_as::<_, OrderSummary>(QUERY)
-        .bind(entries)
-        .bind(offset)
+    if let Ok(orders) = sqlx::query_as::<_, OrderSummary>(&query)
         .fetch_all(&database)
         .await
     {
@@ -574,9 +730,9 @@ pub(crate) async fn order_list_request(
     path = "/api/v1/order",
     request_body = OrderNew,
     responses(
-        (status = 200, description = "add order success", body = ApiResponse, example = json!(ApiResponse::new(200, Some(String::from("success"))))),
-        (status = 400, description = "order exist, ", body = ApiResponse, example = json!(ApiResponse::new(400, Some(String::from("..."))))),
-        (status = 500, description = "server DB error, ", body = ApiResponse, example = json!(ApiResponse::new(500, Some(String::from("..."))))),
+        (status = 200, description = "add order success", body = OrderApiResponse, example = json!(ApiResponse::new(200, Some(String::from("success"))))),
+        (status = 400, description = "order exist, ", body = OrderApiResponse, example = json!(ApiResponse::new(400, Some(String::from("..."))))),
+        (status = 500, description = "server DB error, ", body = OrderApiResponse, example = json!(ApiResponse::new(500, Some(String::from("..."))))),
     ),
 )]
 pub(crate) async fn order_create(
@@ -584,15 +740,15 @@ pub(crate) async fn order_create(
     Extension(_random): Extension<Random>,
     Extension(_auth_state): Extension<AuthState>,
     Json(order): Json<OrderNew>,
-) -> impl IntoResponse {
-    let mut resp = ApiResponse::new(200, Some(String::from("success")));
+) -> Json<OrderApiResponse> {
+    let mut resp = OrderApiResponse::new(400, None);
 
     let contact_id = if let Some(ref contact) = order.contact {
         match query_user_id(&database, contact).await {
             Some(id) => Some(id),
             None => {
-                resp.update(400, Some("contact staff not found".to_string()));
-                return (StatusCode::OK, Json(resp)).into_response();
+                resp.update(400, Some("contact staff not found".to_string()), None, None);
+                return Json(resp);
             }
         }
     } else {
@@ -602,9 +758,9 @@ pub(crate) async fn order_create(
     let department_id = match department_shorten_query(&database, &order.department).await {
         Ok(id) => Some(id),
         Err(e) => {
-            resp.update(404, Some(format!("{e}")));
+            resp.update(404, Some(format!("{e}")), None, None);
             error!("{:?}", &resp);
-            return (StatusCode::OK, Json(resp)).into_response();
+            return Json(resp);
         }
     };
 
@@ -616,9 +772,9 @@ pub(crate) async fn order_create(
     let model_id = match model_id_or_insert(&database, brand, model, None).await {
         Ok(id) => id,
         Err(e) => {
-            resp.update(500, Some(format!("{e}")));
+            resp.update(500, Some(format!("{e}")), None, None);
             error!("{:?}", &resp);
-            return (StatusCode::OK, Json(resp)).into_response();
+            return Json(resp);
         }
     };
 
@@ -626,9 +782,9 @@ pub(crate) async fn order_create(
         Some(ref item) => match accessory_id_or_insert(&database, item, 0).await {
             Ok(id) => Some(id),
             Err(e) => {
-                resp.update(500, Some(format!("{e}")));
+                resp.update(500, Some(format!("{e}")), None, None);
                 error!("{:?}", &resp);
-                return (StatusCode::OK, Json(resp)).into_response();
+                return Json(resp);
             }
         },
         None => None,
@@ -638,9 +794,9 @@ pub(crate) async fn order_create(
         Some(ref item) => match accessory_id_or_insert(&database, item, 0).await {
             Ok(id) => Some(id),
             Err(e) => {
-                resp.update(500, Some(format!("{e}")));
+                resp.update(500, Some(format!("{e}")), None, None,);
                 error!("{:?}", &resp);
-                return (StatusCode::OK, Json(resp)).into_response();
+                return Json(resp);
             }
         },
         None => None,
@@ -650,9 +806,9 @@ pub(crate) async fn order_create(
         Some(ref item) => match fault_id_or_insert(&database, item, 0).await {
             Ok(id) => Some(id),
             Err(e) => {
-                resp.update(500, Some(format!("{e}")));
+                resp.update(500, Some(format!("{e}")), None, None);
                 error!("{:?}", &resp);
-                return (StatusCode::OK, Json(resp)).into_response();
+                return Json(resp);
             }
         },
         None => None,
@@ -662,9 +818,9 @@ pub(crate) async fn order_create(
         Some(ref item) => match fault_id_or_insert(&database, item, 0).await {
             Ok(id) => Some(id),
             Err(e) => {
-                resp.update(500, Some(format!("{e}")));
+                resp.update(500, Some(format!("{e}")), None, None);
                 error!("{:?}", &resp);
-                return (StatusCode::OK, Json(resp)).into_response();
+                return Json(resp);
             }
         },
         None => None,
@@ -673,9 +829,9 @@ pub(crate) async fn order_create(
     let status_id = match status_id_or_insert(&database, &order.status).await {
         Ok(id) => id,
         Err(e) => {
-            resp.update(500, Some(format!("{e}")));
+            resp.update(500, Some(format!("{e}")), None, None);
             error!("{:?}", &resp);
-            return (StatusCode::OK, Json(resp)).into_response();
+            return Json(resp);
         }
     };
 
@@ -683,8 +839,8 @@ pub(crate) async fn order_create(
         match query_user_id(&database, servicer).await {
             Some(id) => Some(id),
             None => {
-                resp.update(400, Some("servicer staff not found".to_string()));
-                return (StatusCode::OK, Json(resp)).into_response();
+                resp.update(400, Some("servicer staff not found".to_string()), None, None);
+                return Json(resp);
             }
         }
     } else {
@@ -695,8 +851,8 @@ pub(crate) async fn order_create(
         match query_user_id(&database, maintainer).await {
             Some(id) => Some(id),
             None => {
-                resp.update(400, Some("maintainer staff not found".to_string()));
-                return (StatusCode::OK, Json(resp)).into_response();
+                resp.update(400, Some("maintainer staff not found".to_string()), None, None);
+                return Json(resp);
             }
         }
     } else {
@@ -766,15 +922,17 @@ pub(crate) async fn order_create(
 
     match fetch_one {
         Ok((id,)) => {
-            resp.update(200, Some(format!("order{id} create success")));
+            resp.update(200,
+                        Some(format!("order{id} create success")),
+                        Some(sn.0), Some(order.customer_phone));
         }
         Err(e) => {
-            resp.update(500, Some(format!("{e}")));
+            resp.update(500, Some(format!("{e}")), None, None);
             error!("{:?}", &resp);
         }
     }
 
-    (StatusCode::OK, Json(resp)).into_response()
+    Json(resp)
 }
 
 async fn model_id_or_insert(

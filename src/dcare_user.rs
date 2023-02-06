@@ -888,7 +888,7 @@ pub(crate) async fn update_user_api(
 
     match fetch_one {
         Ok((id,)) => {
-            resp.update(200, Some(format!("order update success - history{id}")));
+            resp.update(200, Some(format!("user update success - history{id}")));
         }
         Err(e) => {
             resp.update(500, Some(format!("{e}")));

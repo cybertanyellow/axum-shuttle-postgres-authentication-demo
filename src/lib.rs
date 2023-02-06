@@ -64,7 +64,7 @@ pub struct Pagination {
 }
 impl Pagination {
     pub fn parse(mine: Option<Query<Self>>) -> (i32, i32) {
-        mine.map_or((0, 1000), |p| (p.offset, p.entries))
+        mine.map_or((0, 100), |p| (p.offset, p.entries))
     }
 }
 
@@ -148,6 +148,7 @@ pub fn get_router(database: Database) -> Router {
                 dcare_order::OrdersResponse, dcare_order::OrderResponse,
                 dcare_order::OrderInfo, dcare_order::OrderSummary,
                 dcare_order::OrderNew, dcare_order::OrderUpdate,
+                dcare_order::OrderApiResponse,
 
                 department::DepartmentsResponse, department::DepartmentResponse,
                 department::DepartmentInfo, department::DepartmentSummary,
