@@ -995,3 +995,220 @@ Failed to deserialize the JSON body into the target type: .: missing field `depa
     }
   ]
 }
+
+## order/history
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=105906004407507429932975885756887344202' 'https://dcare-rest-service.shuttleapp.rs/api/v1/order/history' -s | jq
+{
+  "code": 200,
+  "histories": [
+    {
+      "change_at": "2023-02-05T06:09:00.595204Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T06:31:04.016417Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T06:32:17.899101Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T06:46:49.800435Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T06:47:35.978097Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T06:50:11.419977Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T07:19:37.615103Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T07:36:26.082719Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T07:39:44.301473Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T08:50:59.876687Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "檢測中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T11:15:04.768106Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "報價中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    }
+  ]
+}
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=105906004407507429932975885756887344202' 'https://dcare-rest-service.shuttleapp.rs/api/v1/order/history/ED0302050500080' -s | jq
+{
+  "code": 200,
+  "histories": [
+    {
+      "change_at": "2023-02-05T06:09:00.595204Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T06:31:04.016417Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T06:32:17.899101Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T06:46:49.800435Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T06:47:35.978097Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T06:50:11.419977Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T07:19:37.615103Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T07:36:26.082719Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T07:39:44.301473Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "送件中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T08:50:59.876687Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "檢測中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    },
+    {
+      "change_at": "2023-02-05T11:15:04.768106Z",
+      "sn": "ED0302050500080",
+      "issuer": "呂宜真",
+      "status": "報價中",
+      "remark": "",
+      "cost": 3600,
+      "department": "SF"
+    }
+  ]
+}
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=105906004407507429932975885756887344202' 'https://dcare-rest-service.shuttleapp.rs/api/v1/order/history/ED0302050500081' -s | jq
+{
+  "code": 200,
+  "histories": []
+}
