@@ -39,7 +39,10 @@ use authentication::{
     auth,
     AuthState,
 };
-use dcare_order::{order_create, order_delete, order_list_request, order_request, order_update};
+use dcare_order::{
+    order_create, order_delete, order_list_request, order_request, order_update,
+    order_history_list_request, order_history_request,
+};
 use dcare_user::{
     logout_response_api, me_api, post_delete_api, post_login_api, post_signup_api,
     update_myself_api, update_user_api, user_api, users_api,
@@ -127,6 +130,8 @@ pub fn get_router(database: Database) -> Router {
             dcare_order::order_delete,
             dcare_order::order_update,
             dcare_order::order_create,
+            dcare_order::order_history_request,
+            dcare_order::order_history_list_request,
 
             department::department_request,
             department::department_list_request,
@@ -190,6 +195,8 @@ pub fn get_router(database: Database) -> Router {
             get(user_api).put(update_user_api).delete(post_delete_api),
         )
         .route("/api/v1/user", get(users_api).post(post_signup_api))
+        .route("/api/v1/order/history/:sn", get(order_history_request))
+        .route("/api/v1/order/history", get(order_history_list_request))
         .route(
             "/api/v1/order/:sn",
             get(order_request).put(order_update).delete(order_delete),

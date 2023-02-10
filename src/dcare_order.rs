@@ -17,7 +17,7 @@ use tracing::{
 };
 use utoipa::{IntoParams, ToSchema};
 
-use crate::authentication::AuthState;
+use crate::{authentication::AuthState, Pagination};
 
 use crate::dcare_user::query_user_id;
 use crate::department::department_shorten_query;
@@ -345,6 +345,88 @@ pub struct OrderSummary {
 pub struct OrdersResponse {
     code: u16,
     orders: Option<Vec<OrderSummary>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, sqlx::FromRow)]
+pub struct OrderHistory {
+    change_at: DateTime<Utc>,
+
+    sn: Option<String>,
+    issuer: Option<String>,
+    status: Option<String>,
+    remark: Option<String>,
+    cost: Option<i32>,
+
+    department: Option<String>,
+}
+
+#[derive(Deserialize, IntoParams)]
+pub struct OrderHistoryListQuery {
+    offset: Option<i32>,
+    entries: Option<i32>,
+    issuer: Option<String>,
+    change_start: Option<NaiveDate>,
+    change_end: Option<NaiveDate>,
+
+    department: Option<String>,
+}
+
+impl OrderHistoryListQuery {
+    pub fn parse(mine: Option<Query<Self>>) -> (i32, i32, String) {
+        if let Some(ref q) = mine {
+            let offset = q.offset
+                .map_or(0, |o| o);
+            let entries = q.entries
+                .map_or(100, |e| e);
+
+            let where_is = if let Some(ref p) = q.issuer {
+                format!("WHERE h.issuer_id = (SELECT id FROM users WHERE account = '{p}')")
+            } else {
+                "".to_string()
+            };
+            let where_is = if let Some(ref d) = q.department {
+                let sql_d = format!("o.department_id = (SELECT id FROM departments WHERE shorten = '{d}')");
+                if where_is.is_empty() {
+                    format!("WHERE {sql_d}")
+                } else {
+                    format!("{where_is} AND {sql_d}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.change_start {
+                let sql = format!("h.change_at >= '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+            let where_is = if let Some(ref s) = q.change_end {
+                let sql = format!("h.change_at < '{s}'");
+                if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                }
+            } else {
+                where_is
+            };
+
+
+            (offset, entries, where_is)
+        } else {
+            (0, 100, "".to_string())
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct OrderHistoriesResponse {
+    code: u16,
+    histories: Option<Vec<OrderHistory>>,
 }
 
 #[utoipa::path(
@@ -1193,6 +1275,108 @@ pub(crate) async fn query_order_by_user_id(database: &Database, uid: i32) -> Opt
     } else {
         None
     }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/order/history/{sn}",
+    params(
+        ("sn" = String, Path, description = "order serial-number"),
+        Pagination,
+    ),
+    responses(
+        (status = 200, description = "get detail order history information", body = OrderResponse)
+    )
+)]
+pub(crate) async fn order_history_request(
+    Extension(_auth_state): Extension<AuthState>,
+    Extension(database): Extension<Database>,
+    Path(sn): Path<String>,
+    page: Option<Query<Pagination>>,
+) -> Json<OrderHistoriesResponse> {
+    let mut resp = OrderHistoriesResponse {
+        code: 400,
+        histories: None,
+    };
+
+    let (offset, entries) = Pagination::parse(page);
+
+    let query = format!(r#"
+        SELECT
+            o.sn AS sn,
+            h.change_at AS change_at,
+            u.username AS issuer,
+            s.flow AS status,
+            h.remark AS remark,
+            h.cost AS cost,
+            d.shorten AS department
+        FROM order_histories h
+            LEFT JOIN orders o ON o.id = h.order_id
+            LEFT JOIN status s ON s.id = h.status_id
+            LEFT JOIN users u ON u.id = h.issuer_id
+            LEFT JOIN departments d ON d.id = u.department_id
+        WHERE h.order_id = (SELECT id FROM orders WHERE sn = $1)
+        LIMIT {entries} OFFSET {offset};
+    "#);
+
+    if let Ok(histories) = sqlx::query_as::<_, OrderHistory>(&query)
+        .bind(&sn)
+        .fetch_all(&database)
+        .await
+    {
+        resp.histories = Some(histories);
+        resp.code = 200;
+    }
+    Json(resp)
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/order/history",
+    params(
+        OrderHistoryListQuery
+    ),
+    responses(
+        (status = 200, description = "get order history list", body = OrdersResponse)
+    )
+)]
+pub(crate) async fn order_history_list_request(
+    Extension(database): Extension<Database>,
+    query: Option<Query<OrderHistoryListQuery>>,
+) -> Json<OrderHistoriesResponse> {
+    let mut resp = OrderHistoriesResponse {
+        code: 400,
+        histories: None,
+    };
+
+    let (offset, entries, where_dep) = OrderHistoryListQuery::parse(query);
+    //info!("[debug] where_dep = {where_dep}");
+
+    let query = format!(r#"
+        SELECT
+            o.sn AS sn,
+            h.change_at AS change_at,
+            u.username AS issuer,
+            s.flow AS status,
+            h.remark AS remark,
+            h.cost AS cost,
+            d.shorten AS department
+        FROM order_histories h
+            LEFT JOIN orders o ON o.id = h.order_id
+            LEFT JOIN status s ON s.id = h.status_id
+            LEFT JOIN users u ON u.id = h.issuer_id
+            LEFT JOIN departments d ON d.id = u.department_id
+        {where_dep} LIMIT {entries} OFFSET {offset};
+    "#);
+
+    if let Ok(histories) = sqlx::query_as::<_, OrderHistory>(&query)
+        .fetch_all(&database)
+        .await
+    {
+        resp.histories = Some(histories);
+        resp.code = 200;
+    }
+    Json(resp)
 }
 
 /*#[test]
