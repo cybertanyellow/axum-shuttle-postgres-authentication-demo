@@ -3,6 +3,9 @@ docker run --rm -it postgres:15.1-alpine psql -U user-dcare-rest-service -W eVWD
 or
 run `docker exec -it shuttle_dcare-rest-service_shared_postgres bash` to find psql
 
+or 
+docker run --rm -it postgres:15.1-alpine psql postgres://postgres:Koralden0901@awsrds-koralden-pg.cdfudm89fdjc.ap-northeast-1.rds.amazonaws.com/postgres
+
 run `psql -U postgres` into cli
 ```sh
 psql (11.16 (Debian 11.16-1.pgdg90+1))

@@ -697,6 +697,11 @@ pub(crate) async fn users_api(
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+struct LogoutSqlRes {
+    id: i32,
+}
+
 #[utoipa::path(
     get,
     path = "/api/v1/logout",
@@ -709,14 +714,29 @@ pub(crate) async fn users_api(
     ),
 )]
 pub(crate) async fn logout_response_api(
-    Extension(_current_user): Extension<AuthState>,
+    Extension(mut current_user): Extension<AuthState>,
+    Extension(database): Extension<Database>,
 ) -> impl IntoResponse {
     let resp = json!({
         "code": 200,
         "session_key": USER_COOKIE_NAME,
         "session_value": "_",
     });
-    //(StatusCode::OK, Json(resp)).into_response()
+
+    if let Some(myself) = current_user.get_user().await {
+        let account = &myself.account;
+        const QUERY: &str = r#"
+        DELETE from sessions
+            WHERE user_id = ( SELECT id FROM users WHERE account = $1 )
+        RETURNING id;
+        "#;
+
+        _ = sqlx::query_as::<_, LogoutSqlRes>(QUERY)
+            .bind(account)
+            .fetch_all(&database)
+            .await
+    }
+
     Response::builder()
         .status(http::StatusCode::OK)
         .header("Location", "/")

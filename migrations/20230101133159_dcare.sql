@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS departments (
     owner text,                         -- 負責人
     telephone text,                     -- 門市電話
     address text,                       -- 門市地址
-    type_mask bit(8)
+    type_mask bit(8)			-- Disable (X), ADM(Y)....
 );
 INSERT INTO departments ( shorten, store_name, type_mask ) VALUES ( 'ADM', '總部', b'10000000')
 ON CONFLICT (shorten) DO NOTHING;
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS users (
 
     account text NOT NULL UNIQUE, -- 帳號
     password text NOT NULL,
-    permission bit(8),        -- 群組, ADM(0),GM(1),Maintenance(2),Commissioner(3),JSHall(4)
+    permission bit(8),        -- 群組, ADM(0),GM(1),Maintenance(2),Commissioner(3),JSHall(4),Disable(?)
     username text,                -- 姓名
     worker_id text,               -- 工號
     title_id integer REFERENCES titles (id) ON DELETE CASCADE,           -- 職稱(in titles table)
