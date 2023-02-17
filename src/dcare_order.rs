@@ -33,6 +33,7 @@ pub struct OrderListQuery {
     servicer: Option<String>,
     maintainer: Option<String>,
     status: Option<String>,
+    life_cycle: Option<String>,
     issue_start: Option<NaiveDate>,
     issue_end: Option<NaiveDate>,
 }
@@ -89,7 +90,7 @@ impl OrderListQuery {
             } else {
                 where_is
             };
-            let where_is = if let Some(ref s) = q.status {
+            let mut where_is = if let Some(ref s) = q.status {
                 let sql = format!("o.status_id = (SELECT id FROM status WHERE flow = '{s}')");
                 if where_is.is_empty() {
                     format!("WHERE {sql}")
@@ -99,6 +100,16 @@ impl OrderListQuery {
             } else {
                 where_is
             };
+
+            if let Some(ref c) = q.life_cycle {
+                let sql = format!("o.life_cycle = '{c}'");
+                where_is = if where_is.is_empty() {
+                    format!("WHERE {sql}")
+                } else {
+                    format!("{where_is} AND {sql}")
+                };
+            }
+
             let where_is = if let Some(ref s) = q.issue_start {
                 let sql = format!("o.issue_at >= '{s}'");
                 if where_is.is_empty() {
@@ -204,6 +215,7 @@ pub struct OrderRawInfo {
     prepaid_free: Option<i32>,
 
     status_id: Option<i32>,
+    life_cycle: String,
     servicer_id: Option<i32>,
     maintainer_id: Option<i32>,
 }
@@ -239,6 +251,7 @@ pub struct OrderInfo {
     prepaid_free: Option<i32>,
 
     status: String,
+    life_cycle: String,
     servicer: Option<String>,
     maintainer: Option<String>,
 }
@@ -270,6 +283,7 @@ pub struct OrderUpdate {
     prepaid_free: Option<i32>,
 
     status: Option<String>,
+    life_cycle: Option<String>,
     #[schema(example = "user's account")]
     servicer: Option<String>,
     #[schema(example = "user's account")]
@@ -307,6 +321,7 @@ pub struct OrderNew {
     prepaid_free: Option<i32>,
 
     status: String,
+    life_cycle: String,
     #[schema(example = "user's account")]
     servicer: Option<String>,
     #[schema(example = "user's account")]
@@ -333,6 +348,7 @@ pub struct OrderSummary {
     cost: Option<i32>,
 
     status: String,
+    life_cycle: String,
     servicer: Option<String>,
     maintainer: Option<String>,
 }
@@ -350,6 +366,7 @@ pub struct OrderHistory {
     sn: Option<String>,
     issuer: Option<String>,
     status: Option<String>,
+    life_cycle: String,
     remark: Option<String>,
     cost: Option<i32>,
 
@@ -586,6 +603,8 @@ pub(crate) async fn order_update(
         None => orig.status_id,
     };
 
+    let life_cycle = order.life_cycle.as_ref().map_or(&orig.life_cycle, |lc| lc);
+
     let servicer_id = if let Some(ref servicer) = order.servicer {
         match query_user_id(&database, servicer).await {
             Some(id) => Some(id),
@@ -654,6 +673,7 @@ pub(crate) async fn order_update(
                 cost = $14,
                 prepaid_free = $15,
                 status_id = $16,
+                life_cycle = $24,
                 servicer_id = $17,
                 maintainer_id = $18
             WHERE sn = $19 RETURNING id
@@ -662,12 +682,14 @@ pub(crate) async fn order_update(
             order_id,
             issuer_id,
             status_id,
+            life_cycle,
             remark,
             cost
         ) VALUES (
             (SELECT id FROM order_updated),
             $20,
             $16,
+            $24,
             $13,
             $14
         ) RETURNING id;"#;
@@ -695,6 +717,7 @@ pub(crate) async fn order_update(
         .bind(&customer_name)
         .bind(&customer_phone)
         .bind(model_id)
+        .bind(life_cycle)
         .fetch_one(&database)
         .await;
 
@@ -808,6 +831,7 @@ pub(crate) async fn order_list_request(
             o.service,
             o.cost,
             s.flow AS status,
+            o.life_cycle AS life_cycle,
             u2.username AS servicer,
             u3.username AS maintainer
         FROM orders o
@@ -999,13 +1023,15 @@ pub(crate) async fn order_create(
             cost,
             prepaid_free,
             status_id,
+            life_cycle,
             servicer_id,
             maintainer_id,
             sn
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8,
             $9, $10, $11, $12, $13, $14, $15, $16,
-            $17, $18, $19, $20, $21, $22, $23, $24
+            $17, $18, $19, $20, $21, $22, $23, $24,
+            $25
         ) RETURNING id;"#;
     let fetch_one: Result<(i32,), _> = sqlx::query_as(INSERT_QUERY)
         .bind(department_id)
@@ -1029,6 +1055,7 @@ pub(crate) async fn order_create(
         .bind(order.cost)
         .bind(order.prepaid_free)
         .bind(status_id)
+        .bind(&order.life_cycle)
         .bind(servicer_id)
         .bind(maintainer_id)
         .bind(&sn.0)
@@ -1220,6 +1247,7 @@ async fn query_order(database: &Database, sn: &str) -> Option<OrderInfo> {
             o.cost,
             o.prepaid_free,
             s.flow status,
+            s.life_cycle AS life_cycle,
             u2.username AS servicer,
             u3.username AS maintainer
         FROM orders o
@@ -1362,6 +1390,7 @@ pub(crate) async fn order_history_request(
             h.change_at AS change_at,
             u.username AS issuer,
             s.flow AS status,
+            h.life_cycle AS life_cycle,
             h.remark AS remark,
             h.cost AS cost,
             d.shorten AS department
@@ -1415,6 +1444,7 @@ pub(crate) async fn order_history_list_request(
             h.change_at AS change_at,
             u.username AS issuer,
             s.flow AS status,
+            h.life_cycle AS life_cycle,
             h.remark AS remark,
             h.cost AS cost,
             d.shorten AS department

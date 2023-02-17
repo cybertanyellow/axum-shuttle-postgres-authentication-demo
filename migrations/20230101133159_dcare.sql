@@ -128,6 +128,7 @@ CREATE TABLE IF NOT EXISTS orders (
     cost integer,                 -- 報價
     prepaid_free integer,         -- 預收款
 
+    life_cycle text,
     status_id integer REFERENCES status (id) ON DELETE CASCADE,    -- 工單狀態
     servicer_id integer REFERENCES users (id) ON DELETE CASCADE,        -- 客服專員
     maintainer_id integer REFERENCES users (id) ON DELETE CASCADE       -- 維保人員
@@ -140,6 +141,7 @@ CREATE TABLE IF NOT EXISTS order_histories (
     order_id integer REFERENCES orders (id) ON DELETE CASCADE,     -- 工單
     issuer_id integer REFERENCES users (id) ON DELETE CASCADE, -- 敲單人員
     status_id integer REFERENCES status (id) ON DELETE CASCADE,    -- 工單狀態
+    life_cycle text,
     remark text,                  -- 備註
     cost integer
 );

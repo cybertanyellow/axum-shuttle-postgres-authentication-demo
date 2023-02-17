@@ -717,27 +717,66 @@ curl -H 'Content-Type: application/json' --cookie 'user_token=293235454743220836
 
 ## orders
 
-└─> curl -H 'Content-Type: application/json' --cookie 'user_token=254971077791281876651467273292106090338' http://127.0.0.1:8000/api/v1/order -s -d '{"customer_phone":"phone1","brand":"brand1","appearance":{"storage":[2],"nbits":8},"status":"check"}'
-{"code":200,"message":"order1 create success"}⏎
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=36422970546204808396185407562221688728' 'http://127.0.0.1:8000/api/v1/order' -s -d '{"customr_phone":"phone1","brand":"brand1","appearance":{"storage":[2],"nbits":8},"status":"check", "department":"JSHall2","customer_phone":"99943566","life_cycle":"start"}'
+{"code":200,"message":"order2 create success","sn":"JSHall2302171400020","customer_phone":"99943566"}⏎
 
-└─> curl -H 'Content-Type: application/json' --cookie 'user_token=254971077791281876651467273292106090338' http://127.0.0.1:8000/api/v1/order -s | jq
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=36422970546204808396185407562221688728' 'http://127.0.0.1:8000/api/v1/order' -s | jq
 {
   "code": 200,
   "orders": [
     {
-      "sn": "NN0301190900010",
-      "issue_at": "2023-01-19T09:18:18.337990Z",
-      "department": null,
+      "sn": "JSHall2302171400020",
+      "issue_at": "2023-02-17T14:26:27.320468Z",
+      "department": "taiwan jshall2 in taichuang",
       "contact": null,
       "customer_name": null,
+      "customer_phone": "99943566",
       "service": null,
       "cost": null,
       "status": "check",
+      "life_cycle": "start",
+      "servicer": null,
+      "maintainer": null
+    },
+    {
+      "sn": "NN0302171400010",
+      "issue_at": "2023-02-17T14:26:07.098310Z",
+      "department": "taiwan jshall2 in taichuang",
+      "contact": null,
+      "customer_name": null,
+      "customer_phone": "99943566",
+      "service": null,
+      "cost": null,
+      "status": "check",
+      "life_cycle": "start",
       "servicer": null,
       "maintainer": null
     }
   ]
 }
+
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=36422970546204808396185407562221688728' 'http://127.0.0.1:8000/api/v1/order/JSHall2302171400020' -s -X PUT -d '{"life_cycle":"callback"}'
+{"code":200,"message":"order update success - history1","sn":"JSHall2302171400020","customer_phone":"99943566"}⏎
+
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=36422970546204808396185407562221688728' 'http://127.0.0.1:8000/api/v1/order' -s | jq
+{
+  "code": 200,
+  "orders": [
+    {
+      "sn": "JSHall2302171400020",
+      "issue_at": "2023-02-17T14:26:27.320468Z",
+      "department": "taiwan jshall2 in taichuang",
+      "contact": null,
+      "customer_name": null,
+      "customer_phone": "99943566",
+      "service": null,
+      "cost": null,
+      "status": "check",
+      "life_cycle": "callback",
+      "servicer": null,
+      "maintainer": null
+    },
+
 
 └─> curl -H 'Content-Type: application/json' --cookie 'user_token=254971077791281876651467273292106090338' http://127.0.0.1:8000/api/v1/order/NN0301190900010 -s | jq
 {
