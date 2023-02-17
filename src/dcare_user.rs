@@ -14,7 +14,7 @@ use http::Response;
 
 use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
-use chrono::{DateTime, Utc, NaiveDate};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, error, info};
@@ -53,10 +53,8 @@ pub struct UserListQuery {
 impl UserListQuery {
     pub fn parse(mine: Option<Query<Self>>) -> (i32, i32, String) {
         if let Some(ref q) = mine {
-            let offset = q.offset
-                .map_or(0, |o| o);
-            let entries = q.entries
-                .map_or(100, |e| e);
+            let offset = q.offset.map_or(0, |o| o);
+            let entries = q.entries.map_or(100, |e| e);
 
             let where_is = if let Some(ref p) = q.phone {
                 format!("WHERE u.customer_phone = '{p}'")
@@ -64,7 +62,8 @@ impl UserListQuery {
                 "".to_string()
             };
             let where_is = if let Some(ref d) = q.department {
-                let sql_d = format!("u.department_id = (SELECT id FROM departments WHERE shorten = '{d}')");
+                let sql_d =
+                    format!("u.department_id = (SELECT id FROM departments WHERE shorten = '{d}')");
                 if where_is.is_empty() {
                     format!("WHERE {sql_d}")
                 } else {
@@ -184,7 +183,6 @@ impl UserListQuery {
             } else {
                 where_is
             };
-
 
             (offset, entries, where_is)
         } else {
@@ -662,7 +660,8 @@ pub(crate) async fn users_api(
 ) -> impl IntoResponse {
     let (offset, entries, where_dep) = UserListQuery::parse(query);
 
-    let sselect = format!(r#"
+    let sselect = format!(
+        r#"
         SELECT
             u.account,
             u.permission,
@@ -677,7 +676,8 @@ pub(crate) async fn users_api(
             LEFT JOIN titles t ON t.id = u.title_id
             LEFT JOIN departments d ON d.id = u.department_id
         {where_dep} LIMIT {entries} OFFSET {offset};
-    "#);
+    "#
+    );
 
     if let Ok(users) = sqlx::query_as::<_, UserInfo>(&sselect)
         .fetch_all(&database)

@@ -8,7 +8,7 @@ use axum::{
 
 use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
-use chrono::{DateTime, Utc, NaiveDate};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 //use serde_json::json;
 use tracing::{
@@ -53,10 +53,8 @@ pub struct DepartmentListQuery {
 impl DepartmentListQuery {
     pub fn parse(mine: Option<Query<Self>>) -> (i32, i32, String) {
         if let Some(ref q) = mine {
-            let offset = q.offset
-                .map_or(0, |o| o);
-            let entries = q.entries
-                .map_or(100, |e| e);
+            let offset = q.offset.map_or(0, |o| o);
+            let entries = q.entries.map_or(100, |e| e);
 
             let where_is = if let Some(ref p) = q.telephone {
                 format!("WHERE o.telephone = '{p}'")
@@ -153,7 +151,6 @@ impl DepartmentListQuery {
             } else {
                 where_is
             };
-
 
             (offset, entries, where_is)
         } else {
@@ -557,7 +554,8 @@ pub(crate) async fn department_list_request(
 
     let (offset, entries, where_dep) = DepartmentListQuery::parse(query);
 
-    let sselect = format!(r#"
+    let sselect = format!(
+        r#"
         SELECT
             d.id,
             create_at,
@@ -570,7 +568,8 @@ pub(crate) async fn department_list_request(
             address
         FROM departments d
         {where_dep} LIMIT {entries} OFFSET {offset};
-    "#);
+    "#
+    );
 
     if let Ok(mut departments) = sqlx::query_as::<_, DepartmentInfoPartial>(&sselect)
         .fetch_all(&database)
@@ -907,10 +906,7 @@ pub(crate) async fn department_shorten_or_insert(
     }
 }*/
 
-pub(crate) async fn department_shorten_query(
-    database: &Database,
-    shorten: &str
-) -> Result<i32> {
+pub(crate) async fn department_shorten_query(database: &Database, shorten: &str) -> Result<i32> {
     const QUERY: &str = "SELECT id FROM departments WHERE shorten = $1;";
     let department: Option<(i32,)> = sqlx::query_as(QUERY)
         .bind(shorten)

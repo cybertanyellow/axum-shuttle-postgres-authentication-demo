@@ -40,8 +40,8 @@ use authentication::{
     AuthState,
 };
 use dcare_order::{
-    order_create, order_delete, order_list_request, order_request, order_update,
-    order_history_list_request, order_history_request,
+    order_create, order_delete, order_history_list_request, order_history_request,
+    order_list_request, order_request, order_update,
 };
 use dcare_user::{
     logout_response_api, me_api, post_delete_api, post_login_api, post_signup_api,

@@ -11,10 +11,7 @@ use bit_vec::BitVec;
 use chrono::{DateTime, Datelike, NaiveDate, Timelike, Utc};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 //use serde_json::json;
-use tracing::{
-    error,
-    //info
-};
+use tracing::error;
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{authentication::AuthState, Pagination};
@@ -43,10 +40,8 @@ pub struct OrderListQuery {
 impl OrderListQuery {
     pub fn parse(mine: Option<Query<Self>>) -> (i32, i32, String) {
         if let Some(ref q) = mine {
-            let offset = q.offset
-                .map_or(0, |o| o);
-            let entries = q.entries
-                .map_or(100, |e| e);
+            let offset = q.offset.map_or(0, |o| o);
+            let entries = q.entries.map_or(100, |e| e);
 
             let where_is = if let Some(ref p) = q.phone {
                 format!("WHERE o.customer_phone = '{p}'")
@@ -54,7 +49,8 @@ impl OrderListQuery {
                 "".to_string()
             };
             let where_is = if let Some(ref d) = q.department {
-                let sql_d = format!("o.department_id = (SELECT id FROM departments WHERE shorten = '{d}')");
+                let sql_d =
+                    format!("o.department_id = (SELECT id FROM departments WHERE shorten = '{d}')");
                 if where_is.is_empty() {
                     format!("WHERE {sql_d}")
                 } else {
@@ -124,14 +120,12 @@ impl OrderListQuery {
                 where_is
             };
 
-
             (offset, entries, where_is)
         } else {
             (0, 100, "".to_string())
         }
     }
 }
-
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams, Default)]
 pub struct OrderApiResponse {
@@ -171,7 +165,6 @@ impl OrderApiResponse {
         self
     }
 }
-
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 struct OrderDeleteRes {
@@ -374,10 +367,8 @@ pub struct OrderHistoryListQuery {
 impl OrderHistoryListQuery {
     pub fn parse(mine: Option<Query<Self>>) -> (i32, i32, String) {
         if let Some(ref q) = mine {
-            let offset = q.offset
-                .map_or(0, |o| o);
-            let entries = q.entries
-                .map_or(100, |e| e);
+            let offset = q.offset.map_or(0, |o| o);
+            let entries = q.entries.map_or(100, |e| e);
 
             let where_is = if let Some(ref p) = q.issuer {
                 format!("WHERE h.issuer_id = (SELECT id FROM users WHERE account = '{p}')")
@@ -385,7 +376,8 @@ impl OrderHistoryListQuery {
                 "".to_string()
             };
             let where_is = if let Some(ref d) = q.department {
-                let sql_d = format!("o.department_id = (SELECT id FROM departments WHERE shorten = '{d}')");
+                let sql_d =
+                    format!("o.department_id = (SELECT id FROM departments WHERE shorten = '{d}')");
                 if where_is.is_empty() {
                     format!("WHERE {sql_d}")
                 } else {
@@ -414,7 +406,6 @@ impl OrderHistoryListQuery {
             } else {
                 where_is
             };
-
 
             (offset, entries, where_is)
         } else {
@@ -573,7 +564,7 @@ pub(crate) async fn order_update(
             Err(e) => {
                 resp.update(500, Some(format!("{e}")), None, None);
                 error!("{:?}", &resp);
-                return Json(resp)
+                return Json(resp);
             }
         },
         None => orig.status_id,
@@ -583,7 +574,12 @@ pub(crate) async fn order_update(
         match query_user_id(&database, servicer).await {
             Some(id) => Some(id),
             None => {
-                resp.update(400, Some("servicer staff not found".to_string()), None, None);
+                resp.update(
+                    400,
+                    Some("servicer staff not found".to_string()),
+                    None,
+                    None,
+                );
                 return Json(resp);
             }
         }
@@ -595,7 +591,12 @@ pub(crate) async fn order_update(
         match query_user_id(&database, maintainer).await {
             Some(id) => Some(id),
             None => {
-                resp.update(400, Some("maintainer staff not found".to_string()), None, None);
+                resp.update(
+                    400,
+                    Some("maintainer staff not found".to_string()),
+                    None,
+                    None,
+                );
                 return Json(resp);
             }
         }
@@ -603,12 +604,9 @@ pub(crate) async fn order_update(
         orig.maintainer_id
     };
 
-    let customer_address = order.customer_address
-        .or(orig.customer_address);
-    let customer_name = order.customer_name
-        .or(orig.customer_name);
-    let customer_phone = order.customer_phone
-        .map_or(orig.customer_phone, |p| p);
+    let customer_address = order.customer_address.or(orig.customer_address);
+    let customer_name = order.customer_name.or(orig.customer_name);
+    let customer_phone = order.customer_phone.map_or(orig.customer_phone, |p| p);
 
     let accessory_other = order.accessory_other.or(orig.accessory_other);
     let service = order.service.or(orig.service);
@@ -684,7 +682,12 @@ pub(crate) async fn order_update(
 
     match fetch_one {
         Ok((id,)) => {
-            resp.update(200, Some(format!("order update success - history{id}")), Some(sn), Some(customer_phone));
+            resp.update(
+                200,
+                Some(format!("order update success - history{id}")),
+                Some(sn),
+                Some(customer_phone),
+            );
         }
         Err(e) => {
             resp.update(500, Some(format!("{e}")), None, None);
@@ -775,7 +778,8 @@ pub(crate) async fn order_list_request(
     let (offset, entries, where_dep) = OrderListQuery::parse(query);
     //info!("[debug] where_dep = {where_dep}");
 
-    let query = format!(r#"
+    let query = format!(
+        r#"
         SELECT
             o.sn,
             o.issue_at,
@@ -795,7 +799,8 @@ pub(crate) async fn order_list_request(
             LEFT JOIN users u2 ON u2.id = o.servicer_id
             LEFT JOIN users u3 ON u3.id = o.maintainer_id
         {where_dep} LIMIT {entries} OFFSET {offset};
-    "#);
+    "#
+    );
 
     if let Ok(orders) = sqlx::query_as::<_, OrderSummary>(&query)
         .fetch_all(&database)
@@ -876,7 +881,7 @@ pub(crate) async fn order_create(
         Some(ref item) => match accessory_id_or_insert(&database, item, 0).await {
             Ok(id) => Some(id),
             Err(e) => {
-                resp.update(500, Some(format!("{e}")), None, None,);
+                resp.update(500, Some(format!("{e}")), None, None);
                 error!("{:?}", &resp);
                 return Json(resp);
             }
@@ -921,7 +926,12 @@ pub(crate) async fn order_create(
         match query_user_id(&database, servicer).await {
             Some(id) => Some(id),
             None => {
-                resp.update(400, Some("servicer staff not found".to_string()), None, None);
+                resp.update(
+                    400,
+                    Some("servicer staff not found".to_string()),
+                    None,
+                    None,
+                );
                 return Json(resp);
             }
         }
@@ -933,7 +943,12 @@ pub(crate) async fn order_create(
         match query_user_id(&database, maintainer).await {
             Some(id) => Some(id),
             None => {
-                resp.update(400, Some("maintainer staff not found".to_string()), None, None);
+                resp.update(
+                    400,
+                    Some("maintainer staff not found".to_string()),
+                    None,
+                    None,
+                );
                 return Json(resp);
             }
         }
@@ -1004,9 +1019,12 @@ pub(crate) async fn order_create(
 
     match fetch_one {
         Ok((id,)) => {
-            resp.update(200,
-                        Some(format!("order{id} create success")),
-                        Some(sn.0), Some(order.customer_phone));
+            resp.update(
+                200,
+                Some(format!("order{id} create success")),
+                Some(sn.0),
+                Some(order.customer_phone),
+            );
         }
         Err(e) => {
             resp.update(500, Some(format!("{e}")), None, None);
@@ -1301,7 +1319,8 @@ pub(crate) async fn order_history_request(
 
     let (offset, entries) = Pagination::parse(page);
 
-    let query = format!(r#"
+    let query = format!(
+        r#"
         SELECT
             o.sn AS sn,
             h.change_at AS change_at,
@@ -1317,7 +1336,8 @@ pub(crate) async fn order_history_request(
             LEFT JOIN departments d ON d.id = u.department_id
         WHERE h.order_id = (SELECT id FROM orders WHERE sn = $1)
         LIMIT {entries} OFFSET {offset};
-    "#);
+    "#
+    );
 
     if let Ok(histories) = sqlx::query_as::<_, OrderHistory>(&query)
         .bind(&sn)
@@ -1352,7 +1372,8 @@ pub(crate) async fn order_history_list_request(
     let (offset, entries, where_dep) = OrderHistoryListQuery::parse(query);
     //info!("[debug] where_dep = {where_dep}");
 
-    let query = format!(r#"
+    let query = format!(
+        r#"
         SELECT
             o.sn AS sn,
             h.change_at AS change_at,
@@ -1367,7 +1388,8 @@ pub(crate) async fn order_history_list_request(
             LEFT JOIN users u ON u.id = h.issuer_id
             LEFT JOIN departments d ON d.id = u.department_id
         {where_dep} LIMIT {entries} OFFSET {offset};
-    "#);
+    "#
+    );
 
     if let Ok(histories) = sqlx::query_as::<_, OrderHistory>(&query)
         .fetch_all(&database)
