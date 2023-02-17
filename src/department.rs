@@ -57,12 +57,12 @@ impl DepartmentListQuery {
             let entries = q.entries.map_or(100, |e| e);
 
             let where_is = if let Some(ref p) = q.telephone {
-                format!("WHERE o.telephone = '{p}'")
+                format!("WHERE d.telephone = '{p}'")
             } else {
                 "".to_string()
             };
             let where_is = if let Some(ref s) = q.shorten {
-                let sql_d = format!("o.shorten = '{s}'");
+                let sql_d = format!("d.shorten = '{s}'");
                 if where_is.is_empty() {
                     format!("WHERE {sql_d}")
                 } else {
@@ -72,7 +72,7 @@ impl DepartmentListQuery {
                 where_is
             };
             let where_is = if let Some(ref s) = q.store_name {
-                let sql_d = format!("o.store_name = '{s}'");
+                let sql_d = format!("d.store_name = '{s}'");
                 if where_is.is_empty() {
                     format!("WHERE {sql_d}")
                 } else {
@@ -82,7 +82,7 @@ impl DepartmentListQuery {
                 where_is
             };
             let where_is = if let Some(ref s) = q.owner {
-                let sql_d = format!("o.owner = '{s}'");
+                let sql_d = format!("d.owner = '{s}'");
                 if where_is.is_empty() {
                     format!("WHERE {sql_d}")
                 } else {
@@ -92,7 +92,7 @@ impl DepartmentListQuery {
                 where_is
             };
             let where_is = if let Some(ref s) = q.address {
-                let sql_d = format!("o.address = '{s}'");
+                let sql_d = format!("d.address = '{s}'");
                 if where_is.is_empty() {
                     format!("WHERE {sql_d}")
                 } else {
@@ -102,7 +102,7 @@ impl DepartmentListQuery {
                 where_is
             };
             let where_is = if let Some(ref s) = q.type_mask {
-                let sql_d = format!("o.type_mask & {:?}", s);
+                let sql_d = format!("d.type_mask & {:?}", s);
                 if where_is.is_empty() {
                     format!("WHERE {sql_d}")
                 } else {
@@ -112,7 +112,7 @@ impl DepartmentListQuery {
                 where_is
             };
             let where_is = if let Some(ref s) = q.create_start {
-                let sql = format!("o.create_at >= '{s}'");
+                let sql = format!("d.create_at >= '{s}'");
                 if where_is.is_empty() {
                     format!("WHERE {sql}")
                 } else {
@@ -122,7 +122,7 @@ impl DepartmentListQuery {
                 where_is
             };
             let where_is = if let Some(ref s) = q.create_end {
-                let sql = format!("o.create_at < '{s}'");
+                let sql = format!("d.create_at < '{s}'");
                 if where_is.is_empty() {
                     format!("WHERE {sql}")
                 } else {
@@ -132,7 +132,7 @@ impl DepartmentListQuery {
                 where_is
             };
             let where_is = if let Some(ref s) = q.update_start {
-                let sql = format!("o.update_at >= '{s}'");
+                let sql = format!("d.update_at >= '{s}'");
                 if where_is.is_empty() {
                     format!("WHERE {sql}")
                 } else {
@@ -142,7 +142,7 @@ impl DepartmentListQuery {
                 where_is
             };
             let where_is = if let Some(ref s) = q.update_end {
-                let sql = format!("o.update_at < '{s}'");
+                let sql = format!("d.update_at < '{s}'");
                 if where_is.is_empty() {
                     format!("WHERE {sql}")
                 } else {

@@ -1,7 +1,8 @@
 # database
 docker run --rm -it postgres:15.1-alpine psql -U user-dcare-rest-service -W eVWDdnbFuOOL -h db.shuttle.rs -p 5432 -d db-dcare-rest-service
 or
-run `docker exec -it shuttle_dcare-rest-service_shared_postgres bash` to find psql
+#run `docker exec -it shuttle_dcare-rest-service_shared_postgres bash` to find psql
+docker exec -it shuttle_dcare-rest-service_shared_postgres psql -U postgres
 
 or 
 docker run --rm -it postgres:15.1-alpine psql postgres://postgres:Koralden0901@awsrds-koralden-pg.cdfudm89fdjc.ap-northeast-1.rds.amazonaws.com/postgres
