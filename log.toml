@@ -1215,3 +1215,86 @@ Failed to deserialize the JSON body into the target type: .: missing field `depa
   "code": 200,
   "histories": []
 }
+
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=36422970546204808396185407562221688728' 'http://127.0.0.1:8000/api/v1/order/JSHall2302060500090' -s | jq
+{
+  "code": 200,
+  "order": {
+    "sn": "JSHall2302060500090",
+    "issue_at": "2023-02-06T05:33:57.821795Z",
+    "department": "taiwan jshall2 in taichuang",
+    "contact": null,
+    "customer_name": null,
+    "customer_phone": "0911123123",
+    "customer_address": null,
+    "brand": "unknown",
+    "model": "v1",
+    "purchase_at": null,
+    "accessory1": null,
+    "accessory2": null,
+    "accessory_other": null,
+    "appearance": {
+      "storage": [
+        3
+      ],
+      "nbits": 8
+    },
+    "appearance_other": null,
+    "service": null,
+    "fault1": null,
+    "fault2": null,
+    "fault_other": null,
+    "photo_url": null,
+    "remark": null,
+    "cost": null,
+    "prepaid_free": null,
+    "status": "clean",
+    "servicer": null,
+    "maintainer": null
+  }
+}
+# order: update brand only
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=36422970546204808396185407562221688728' 'http://127.0.0.1:8000/api/v1/order/JSHall2302060500090' -X PUT -d '{"brand":"dyson"}' -s | jq
+{
+  "code": 200,
+  "message": "order update success - history6",
+  "sn": "JSHall2302060500090",
+  "customer_phone": "0911123123"
+}
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=36422970546204808396185407562221688728' 'http://127.0.0.1:8000/api/v1/order/JSHall2302060500090' -s | jq
+{
+  "code": 200,
+  "order": {
+    "sn": "JSHall2302060500090",
+    "issue_at": "2023-02-06T05:33:57.821795Z",
+    "department": "taiwan jshall2 in taichuang",
+    "contact": null,
+    "customer_name": null,
+    "customer_phone": "0911123123",
+    "customer_address": null,
+    "brand": "dyson",
+    "model": "v1",
+    "purchase_at": null,
+    "accessory1": null,
+    "accessory2": null,
+    "accessory_other": null,
+    "appearance": {
+      "storage": [
+        3
+      ],
+      "nbits": 8
+    },
+    "appearance_other": null,
+    "service": null,
+    "fault1": null,
+    "fault2": null,
+    "fault_other": null,
+    "photo_url": null,
+    "remark": null,
+    "cost": null,
+    "prepaid_free": null,
+    "status": "clean",
+    "servicer": null,
+    "maintainer": null
+  }
+}

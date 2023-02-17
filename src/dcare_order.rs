@@ -251,6 +251,9 @@ pub struct OrderUpdate {
     customer_phone: Option<String>,
     customer_address: Option<String>,
 
+    brand: Option<String>,
+    model: Option<String>,
+
     accessory1: Option<String>,
     accessory2: Option<String>,
     accessory_other: Option<String>,
@@ -502,6 +505,19 @@ pub(crate) async fn order_update(
         None => orig.department_id,
     };
 
+    let bm = model_map_by_id(&database, orig.model_id).await;
+    let (orig_brand, orig_model) = bm.as_ref().map_or(("unknown", "unknown"), |(b, m)| (b, m));
+    let brand = order.brand.as_ref().map_or(orig_brand, |b| b);
+    let model = order.model.as_ref().map_or(orig_model, |m| m);
+    let model_id = match model_id_or_insert(&database, brand, model, None).await {
+        Ok(id) => id,
+        Err(e) => {
+            resp.update(500, Some(format!("{e}")), None, None);
+            error!("{:?}", &resp);
+            return Json(resp);
+        }
+    };
+
     let accessory_id1 = match order.accessory1 {
         Some(ref item) => match accessory_id_or_insert(&database, item, 0).await {
             Ok(id) => Some(id),
@@ -623,6 +639,7 @@ pub(crate) async fn order_update(
                 customer_address = $2,
                 customer_name = $21,
                 customer_phone = $22,
+                model_id = $23,
                 accessory_id1 = $3,
                 accessory_id2 = $4,
                 accessory_other = $5,
@@ -677,6 +694,7 @@ pub(crate) async fn order_update(
         .bind(issuer.id)
         .bind(&customer_name)
         .bind(&customer_phone)
+        .bind(model_id)
         .fetch_one(&database)
         .await;
 
@@ -1033,6 +1051,24 @@ pub(crate) async fn order_create(
     }
 
     Json(resp)
+}
+
+async fn model_map_by_id(database: &Database, id: Option<i32>) -> Option<(String, String)> {
+    if let Some(id) = id {
+        const QUERY: &str = "SELECT brand, model FROM models WHERE id = $1;";
+        let res: Result<Option<(String, String)>, _> = sqlx::query_as(QUERY)
+            .bind(id)
+            .fetch_optional(database)
+            .await;
+
+        if let Ok(Some((brand, model))) = res {
+            Some((brand, model))
+        } else {
+            None
+        }
+    } else {
+        None
+    }
 }
 
 async fn model_id_or_insert(
