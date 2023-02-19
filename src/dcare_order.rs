@@ -178,7 +178,7 @@ impl OrderApiResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
-struct OrderDeleteRes {
+struct OrderI32Res {
     id: i32,
 }
 
@@ -786,7 +786,7 @@ pub(crate) async fn order_delete(
         DELETE from orders WHERE sn = $1
         RETURNING id;"#;
 
-    if sqlx::query_as::<_, OrderDeleteRes>(QUERY)
+    if sqlx::query_as::<_, OrderI32Res>(QUERY)
         .bind(sn)
         .fetch_all(&database)
         .await
@@ -998,7 +998,7 @@ pub(crate) async fn order_create(
         None
     };
 
-    let sn = OrderSN::generate(&database, department_id).await;
+    let sn = OrderSN::generate(&database, &order.department).await;
 
     const INSERT_QUERY: &str = r#"
         INSERT INTO orders (
@@ -1292,29 +1292,28 @@ async fn query_raw_order(database: &Database, sn: &str) -> Option<OrderRawInfo> 
 pub struct OrderSN(String);
 
 impl OrderSN {
-    async fn generate(database: &Database, department_id: Option<i32>) -> Self {
+    async fn generate(database: &Database, department_shorten: &str) -> Self {
         /* (old) DB 22 12 21 20 17 07 0 => DD YY MM DD hh mm ss 0
          * (new) DD DY MM DD hh XX XX 0
          */
         const QUERY: &str = r#"
             SELECT
-                id, (SELECT shorten FROM departments WHERE id = $1)
+                id
             FROM orders
             ORDER BY id DESC LIMIT 1;
         "#;
-        let res: Result<Option<(i32, String)>, _> = sqlx::query_as(QUERY)
-            .bind(department_id)
+        let res: Result<Option<OrderI32Res>, _> = sqlx::query_as(QUERY)
             .fetch_optional(database)
             .await;
-        let (next, shorten) = match res {
-            Ok(res) => res.map_or((1, "NN".to_string()), |(i, s)| (i + 1, s)),
-            Err(_) => (1, "NN".to_string()),
+        let next = match res {
+            Ok(res) => res.map_or(1, |r| r.id + 1),
+            Err(_) => 1,
         };
 
         let now = Utc::now();
 
         let res = format!(
-            "{shorten:0<3}{y}{mm:02}{dd:02}{hh:02}{next:04}0",
+            "{department_shorten:0<3}{y}{mm:02}{dd:02}{hh:02}{next:04}0",
             y = (now.year() % 10),
             mm = now.month(),
             dd = now.day(),
@@ -1400,6 +1399,7 @@ pub(crate) async fn order_history_request(
             LEFT JOIN users u ON u.id = h.issuer_id
             LEFT JOIN departments d ON d.id = u.department_id
         WHERE h.order_id = (SELECT id FROM orders WHERE sn = $1)
+        ORDER BY change_at
         LIMIT {entries} OFFSET {offset};
     "#
     );
@@ -1453,7 +1453,9 @@ pub(crate) async fn order_history_list_request(
             LEFT JOIN status s ON s.id = h.status_id
             LEFT JOIN users u ON u.id = h.issuer_id
             LEFT JOIN departments d ON d.id = u.department_id
-        {where_dep} LIMIT {entries} OFFSET {offset};
+        {where_dep}
+        ORDER BY change_at
+        LIMIT {entries} OFFSET {offset};
     "#
     );
 
