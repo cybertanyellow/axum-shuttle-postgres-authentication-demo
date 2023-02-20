@@ -321,7 +321,7 @@ pub struct OrderNew {
     prepaid_free: Option<i32>,
 
     status: String,
-    life_cycle: String,
+    life_cycle: Option<String>,
     #[schema(example = "user's account")]
     servicer: Option<String>,
     #[schema(example = "user's account")]
@@ -998,6 +998,10 @@ pub(crate) async fn order_create(
         None
     };
 
+    let life_cycle = order.life_cycle
+        .as_ref()
+        .map_or("進行中", |l| l);
+
     let sn = OrderSN::generate(&database, &order.department).await;
 
     const INSERT_QUERY: &str = r#"
@@ -1055,7 +1059,7 @@ pub(crate) async fn order_create(
         .bind(order.cost)
         .bind(order.prepaid_free)
         .bind(status_id)
-        .bind(&order.life_cycle)
+        .bind(life_cycle)
         .bind(servicer_id)
         .bind(maintainer_id)
         .bind(&sn.0)
@@ -1247,7 +1251,7 @@ async fn query_order(database: &Database, sn: &str) -> Option<OrderInfo> {
             o.cost,
             o.prepaid_free,
             s.flow status,
-            s.life_cycle AS life_cycle,
+            o.life_cycle AS life_cycle,
             u2.username AS servicer,
             u3.username AS maintainer
         FROM orders o

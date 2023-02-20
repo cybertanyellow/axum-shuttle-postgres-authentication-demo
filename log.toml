@@ -1338,3 +1338,43 @@ Failed to deserialize the JSON body into the target type: .: missing field `depa
     "maintainer": null
   }
 }
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=36422970546204808396185407562221688728' 'http://127.0.0.1:8000/api/v1/order' -s -d '{"customr_phone":"phone2","brand":"brand1","appearance":{"storage":[2],"nbits":8},"status":"check", "department":"BM","customer_phone":"99943566"}'
+{"code":200,"message":"order4 create success","sn":"BM0302200200040","customer_phone":"99943566"}⏎
+└─> curl -H 'Content-Type: application/json' --cookie 'user_token=36422970546204808396185407562221688728' 'http://127.0.0.1:8000/api/v1/order/BM0302200200040' -s | jq
+{
+  "code": 200,
+  "order": {
+    "sn": "BM0302200200040",
+    "issue_at": "2023-02-20T02:22:45.652015Z",
+    "department": null,
+    "contact": null,
+    "customer_name": null,
+    "customer_phone": "99943566",
+    "customer_address": null,
+    "brand": "brand1",
+    "model": "unknown",
+    "purchase_at": null,
+    "accessory1": null,
+    "accessory2": null,
+    "accessory_other": null,
+    "appearance": {
+      "storage": [
+        2
+      ],
+      "nbits": 8
+    },
+    "appearance_other": null,
+    "service": null,
+    "fault1": null,
+    "fault2": null,
+    "fault_other": null,
+    "photo_url": null,
+    "remark": null,
+    "cost": null,
+    "prepaid_free": null,
+    "status": "check",
+    "life_cycle": "進行中",
+    "servicer": null,
+    "maintainer": null
+  }
+}
