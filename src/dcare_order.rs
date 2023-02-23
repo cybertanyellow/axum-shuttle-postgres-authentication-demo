@@ -867,10 +867,17 @@ pub(crate) async fn order_list_request(
 pub(crate) async fn order_create(
     Extension(database): Extension<Database>,
     Extension(_random): Extension<Random>,
-    Extension(_auth_state): Extension<AuthState>,
+    Extension(mut current_user): Extension<AuthState>,
     Json(order): Json<OrderNew>,
 ) -> Json<OrderApiResponse> {
     let mut resp = OrderApiResponse::new(400, None);
+
+    let issuer = if let Some(user) = current_user.get_user().await {
+        user
+    } else {
+        resp.update(400, Some(format!("{}", &NotLoggedIn)), None, None);
+        return Json(resp);
+    };
 
     let contact_id = if let Some(ref contact) = order.contact {
         match query_user_id(&database, contact).await {
@@ -1005,38 +1012,56 @@ pub(crate) async fn order_create(
     let sn = OrderSN::generate(&database, &order.department).await;
 
     const INSERT_QUERY: &str = r#"
-        INSERT INTO orders (
-            department_id,
-            contact_id,
-            customer_name,
-            customer_phone,
-            customer_address,
-            model_id,
-            purchase_at,
-            accessory_id1,
-            accessory_id2,
-            accessory_other,
-            appearance,
-            appearance_other,
-            service,
-            fault_id1,
-            fault_id2,
-            fault_other,
-            photo_url,
-            remark,
-            cost,
-            prepaid_free,
+        WITH order_created AS (
+            INSERT INTO orders (
+                department_id,
+                contact_id,
+                customer_name,
+                customer_phone,
+                customer_address,
+                model_id,
+                purchase_at,
+                accessory_id1,
+                accessory_id2,
+                accessory_other,
+                appearance,
+                appearance_other,
+                service,
+                fault_id1,
+                fault_id2,
+                fault_other,
+                photo_url,
+                remark,
+                cost,
+                prepaid_free,
+                status_id,
+                life_cycle,
+                servicer_id,
+                maintainer_id,
+                sn
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8,
+                $9, $10, $11, $12, $13, $14, $15, $16,
+                $17, $18, $19, $20, $21, $22, $23, $24,
+                $25
+            ) RETURNING id
+        )
+        INSERT INTO order_histories (
+            order_id,
+            issuer_id,
             status_id,
             life_cycle,
-            servicer_id,
-            maintainer_id,
-            sn
+            remark,
+            cost
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8,
-            $9, $10, $11, $12, $13, $14, $15, $16,
-            $17, $18, $19, $20, $21, $22, $23, $24,
-            $25
-        ) RETURNING id;"#;
+            (SELECT id FROM order_created),
+            $26,
+            $21,
+            $22,
+            $18,
+            $19
+        ) RETURNING id;
+    "#;
     let fetch_one: Result<(i32,), _> = sqlx::query_as(INSERT_QUERY)
         .bind(department_id)
         .bind(contact_id)
@@ -1063,6 +1088,7 @@ pub(crate) async fn order_create(
         .bind(servicer_id)
         .bind(maintainer_id)
         .bind(&sn.0)
+        .bind(issuer.id)
         .fetch_one(&database)
         .await;
 
