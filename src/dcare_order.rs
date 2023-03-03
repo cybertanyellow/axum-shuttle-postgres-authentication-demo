@@ -11,7 +11,10 @@ use bit_vec::BitVec;
 use chrono::{DateTime, Datelike, NaiveDate, Timelike, Utc};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 //use serde_json::json;
-use tracing::error;
+use tracing::{
+    info,
+    error,
+};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{authentication::AuthState, Pagination};
@@ -20,6 +23,10 @@ use crate::dcare_user::query_user_id;
 use crate::department::department_shorten_query;
 use crate::errors::NotLoggedIn;
 use crate::{ApiResponse, Database, Random};
+use crate::gsheets::{
+    SharedDcareGoogleSheet,
+    GooglesheetPosition
+};
 
 type Price = i32;
 
@@ -488,6 +495,7 @@ pub(crate) async fn order_request(
 )]
 pub(crate) async fn order_update(
     Extension(mut current_user): Extension<AuthState>,
+    Extension(gsheets): Extension<SharedDcareGoogleSheet>,
     Path(sn): Path<String>,
     Extension(database): Extension<Database>,
     Json(order): Json<OrderUpdate>,
@@ -650,6 +658,9 @@ pub(crate) async fn order_update(
     let remark = order.remark.or(orig.remark);
     let cost = order.cost.or(orig.cost);
     let prepaid_free = order.prepaid_free.or(orig.prepaid_free);
+
+    /*let _ = gsheets_order_update(gsheets.clone(), gpos, &order)
+        .await;*/
 
     const UPDATE_QUERY: &str = r#"
         WITH order_updated AS (
@@ -854,6 +865,38 @@ pub(crate) async fn order_list_request(
     (StatusCode::OK, Json(resp)).into_response()
 }
 
+async fn gsheets_order_append(
+    gsheets: SharedDcareGoogleSheet,
+    order: &OrderNew,
+    issue_at: DateTime<Utc>,
+    sn: &str
+) -> GooglesheetPosition {
+    let req: Vec<String> = vec![issue_at.to_string(), sn.to_string(), order.department.clone()];
+
+    gsheets.append(req)
+        .await
+        .unwrap_or_default()
+}
+
+async fn gsheets_order_update(
+    gsheets: SharedDcareGoogleSheet,
+    pos: GooglesheetPosition,
+    order: &OrderUpdate,
+) -> Result<()> {
+    /* TODO */
+    let req: Vec<String> = vec!["TODO".to_string(), "TODO".to_string()];
+
+    gsheets.modify(req, pos)
+        .await
+        .map_err(|e| anyhow!("{e}"))
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+struct OrderNewRes {
+    id: i32,
+    issue_at: DateTime<Utc>,
+}
+
 #[utoipa::path(
     post,
     path = "/api/v1/order",
@@ -867,6 +910,7 @@ pub(crate) async fn order_list_request(
 pub(crate) async fn order_create(
     Extension(database): Extension<Database>,
     Extension(_random): Extension<Random>,
+    Extension(gsheets): Extension<SharedDcareGoogleSheet>,
     Extension(mut current_user): Extension<AuthState>,
     Json(order): Json<OrderNew>,
 ) -> Json<OrderApiResponse> {
@@ -1005,62 +1049,45 @@ pub(crate) async fn order_create(
         None
     };
 
-    let life_cycle = order.life_cycle
-        .as_ref()
-        .map_or("進行中", |l| l);
+    let life_cycle = order.life_cycle.as_ref().map_or("進行中", |l| l);
 
     let sn = OrderSN::generate(&database, &order.department).await;
+    let issue_at = Utc::now();
 
     const INSERT_QUERY: &str = r#"
-        WITH order_created AS (
-            INSERT INTO orders (
-                department_id,
-                contact_id,
-                customer_name,
-                customer_phone,
-                customer_address,
-                model_id,
-                purchase_at,
-                accessory_id1,
-                accessory_id2,
-                accessory_other,
-                appearance,
-                appearance_other,
-                service,
-                fault_id1,
-                fault_id2,
-                fault_other,
-                photo_url,
-                remark,
-                cost,
-                prepaid_free,
-                status_id,
-                life_cycle,
-                servicer_id,
-                maintainer_id,
-                sn
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8,
-                $9, $10, $11, $12, $13, $14, $15, $16,
-                $17, $18, $19, $20, $21, $22, $23, $24,
-                $25
-            ) RETURNING id
-        )
-        INSERT INTO order_histories (
-            order_id,
-            issuer_id,
+        INSERT INTO orders (
+            department_id,
+            contact_id,
+            customer_name,
+            customer_phone,
+            customer_address,
+            model_id,
+            purchase_at,
+            accessory_id1,
+            accessory_id2,
+            accessory_other,
+            appearance,
+            appearance_other,
+            service,
+            fault_id1,
+            fault_id2,
+            fault_other,
+            photo_url,
+            remark,
+            cost,
+            prepaid_free,
             status_id,
             life_cycle,
-            remark,
-            cost
+            servicer_id,
+            maintainer_id,
+            sn,
+            issue_at
         ) VALUES (
-            (SELECT id FROM order_created),
-            $26,
-            $21,
-            $22,
-            $18,
-            $19
-        ) RETURNING id;
+            $1, $2, $3, $4, $5, $6, $7, $8,
+            $9, $10, $11, $12, $13, $14, $15, $16,
+            $17, $18, $19, $20, $21, $22, $23, $24,
+            $25, $26
+        ) RETURNING id
     "#;
     let fetch_one: Result<(i32,), _> = sqlx::query_as(INSERT_QUERY)
         .bind(department_id)
@@ -1088,7 +1115,64 @@ pub(crate) async fn order_create(
         .bind(servicer_id)
         .bind(maintainer_id)
         .bind(&sn.0)
+        .bind(&issue_at)
+        .fetch_one(&database)
+        .await;
+
+    info!("[debug] fetch_one as {:?}", fetch_one);
+
+    let order_id = match fetch_one {
+        Ok((id,)) => {
+            id
+        }
+        Err(e) => {
+            resp.update(500, Some(format!("{e}")), None, None);
+            error!("{:?}", &resp);
+            return Json(resp)
+        }
+    };
+
+    let gsheet_pos = gsheets_order_append(gsheets.clone(), &order, issue_at, &sn.0)
+        .await;
+    info!("[debug] gsheet_pos = {:?}", gsheet_pos);
+
+    const INSERT_QUERY2: &str = r#"
+        WITH history_created AS (
+            INSERT INTO order_histories (
+                order_id,
+                issuer_id,
+                status_id,
+                life_cycle,
+                remark,
+                cost
+            ) VALUES (
+                $1,
+                $2,
+                $3,
+                $4,
+                $5,
+                $6
+            ) RETURNING id
+        )
+        INSERT INTO order_gsheets (
+            order_id,
+            column,
+            row
+        ) VALUES (
+            $1,
+            $7,
+            $8
+        ) RETURNING id;
+    "#;
+    let fetch_one: Result<(i32,), _> = sqlx::query_as(INSERT_QUERY2)
+        .bind(order_id)
         .bind(issuer.id)
+        .bind(status_id)
+        .bind(life_cycle)
+        .bind(&order.remark)
+        .bind(order.cost)
+        .bind(&gsheet_pos.column)
+        .bind(gsheet_pos.row)
         .fetch_one(&database)
         .await;
 
@@ -1332,9 +1416,8 @@ impl OrderSN {
             FROM orders
             ORDER BY id DESC LIMIT 1;
         "#;
-        let res: Result<Option<OrderI32Res>, _> = sqlx::query_as(QUERY)
-            .fetch_optional(database)
-            .await;
+        let res: Result<Option<OrderI32Res>, _> =
+            sqlx::query_as(QUERY).fetch_optional(database).await;
         let next = match res {
             Ok(res) => res.map_or(1, |r| r.id + 1),
             Err(_) => 1,

@@ -1,4 +1,5 @@
 -- DROP TABLE IF EXISTS sessions;
+-- DROP TABLE IF EXISTS order_gsheets;
 -- DROP TABLE IF EXISTS order_histories;
 -- DROP TABLE IF EXISTS orders;
 -- DROP TABLE IF EXISTS users;
@@ -132,6 +133,14 @@ CREATE TABLE IF NOT EXISTS orders (
     status_id integer REFERENCES status (id) ON DELETE CASCADE,    -- 工單狀態
     servicer_id integer REFERENCES users (id) ON DELETE CASCADE,        -- 客服專員
     maintainer_id integer REFERENCES users (id) ON DELETE CASCADE       -- 維保人員
+);
+
+CREATE TABLE IF NOT EXISTS order_gsheets (
+    id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+
+    order_id integer REFERENCES orders (id) ON DELETE CASCADE,     -- 工單
+    sheet_column text,
+    sheet_row integer
 );
 
 CREATE TABLE IF NOT EXISTS order_histories (

@@ -3,6 +3,7 @@ mod dcare_order;
 mod dcare_user;
 mod department;
 mod errors;
+mod gsheets;
 mod utils;
 
 use std::sync::{Arc, Mutex};
@@ -24,6 +25,7 @@ use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
 use shuttle_service::{error::CustomError, ShuttleAxum};
+use shuttle_secrets::SecretStore;
 use sqlx::Executor;
 use tera::{Context, Tera};
 use utoipa::{
@@ -52,6 +54,7 @@ use department::{
     department_update,
     /*department_org_delete, department_org_list_request, department_org_request,*/
 };
+use gsheets::SharedDcareGoogleSheet;
 
 type Templates = Arc<Tera>;
 type Database = sqlx::PgPool;
@@ -90,15 +93,24 @@ impl ApiResponse {
 }
 
 #[shuttle_service::main]
-async fn server(#[shuttle_shared_db::Postgres] pool: Database) -> ShuttleAxum {
+async fn server(
+#[shuttle_secrets::Secrets] secret_store: SecretStore,
+#[shuttle_shared_db::Postgres] pool: Database,
+) -> ShuttleAxum {
     pool.execute(include_str!("../schema.sql"))
         .await
         .map_err(CustomError::new)?;
 
-    Ok(sync_wrapper::SyncWrapper::new(get_router(pool)))
+    let gsheet = SharedDcareGoogleSheet::new(
+        "19cQ_zAgqkM_iqOiqECP1yVTobuRkFbwk-VfegOys8ZE",
+        "工單表",
+        ).await
+        .ok();
+
+    Ok(sync_wrapper::SyncWrapper::new(get_router(pool, gsheet)))
 }
 
-pub fn get_router(database: Database) -> Router {
+pub fn get_router(database: Database, gsheet: Option<SharedDcareGoogleSheet>) -> Router {
     let mut tera = Tera::default();
     tera.add_raw_templates(vec![
         ("base.html", include_str!("../templates/base.html")),
@@ -183,7 +195,7 @@ pub fn get_router(database: Database) -> Router {
         }
     }
 
-    Router::new()
+    let router = Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-doc/openapi.json", ApiDoc::openapi()))
         .route("/", get(index))
         .route("/styles.css", any(styles))
@@ -222,7 +234,14 @@ pub fn get_router(database: Database) -> Router {
         }))
         .layer(Extension(Arc::new(tera)))
         .layer(Extension(database))
-        .layer(Extension(Arc::new(Mutex::new(random))))
+        .layer(Extension(Arc::new(Mutex::new(random))));
+
+
+    if let Some(gsheets) = gsheet {
+        router.layer(Extension(gsheets))
+    } else {
+        router
+    }
 }
 
 async fn index(
