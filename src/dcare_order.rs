@@ -865,6 +865,27 @@ pub(crate) async fn order_list_request(
     (StatusCode::OK, Json(resp)).into_response()
 }
 
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct OrderGoogleSheetSql {
+    id: i32,
+
+    order_id: i32,
+    sheet_column: String,
+    sheet_row: i32,
+}
+
+impl OrderGoogleSheetSql {
+    #[allow(dead_code)]
+    async fn from_query(database: &Database, order_id: i32) -> Option<Self> {
+        let query = format!("SELECT * FROM order_gsheets WHERE order_id = {order_id};");
+
+        sqlx::query_as::<_, Self>(&query)
+            .fetch_optional(database)
+            .await
+            .unwrap_or(None)
+    }
+}
+
 async fn gsheets_order_append(
     gsheets: SharedDcareGoogleSheet,
     order: &OrderNew,
@@ -1156,8 +1177,8 @@ pub(crate) async fn order_create(
         )
         INSERT INTO order_gsheets (
             order_id,
-            column,
-            row
+            sheet_column,
+            sheet_row
         ) VALUES (
             $1,
             $7,

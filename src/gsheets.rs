@@ -117,10 +117,11 @@ pub struct SharedDcareGoogleSheet {
 
 impl SharedDcareGoogleSheet {
     pub async fn new(
+        key: Option<String>,
         document_id: &str,
         tab_name: &str,
     ) -> Result<Self, SheetsError> {
-        DcareGoogleSheet::new()
+        DcareGoogleSheet::new(key)
             .await
             .map(|g| Self {
                 document_id: document_id.to_string(),
@@ -143,7 +144,6 @@ impl SharedDcareGoogleSheet {
     ) -> Result<GooglesheetPosition, SheetsError> {
         let sheet = self.get_sheets();
 
-        let req: Vec<String> = vec![issue_at.to_string(), sn.to_string(), order.department];
 
         /* TODO */
         Err(SheetsError::UpdateRangeError)
@@ -229,19 +229,24 @@ struct DcareGoogleSheet {
 
 impl DcareGoogleSheet {
     #[allow(dead_code)]
-    fn service_account_from_env() -> Result<ServiceAccountKey, SheetsError> {
-        let env = std::env::var("SERVICE_ACCOUNT_JSON")?;
-        let key = serde_json::from_str(&env)?;
+    fn service_account_from(
+        key: Option<String>,
+    ) -> Result<ServiceAccountKey, SheetsError> {
+        let key = if let Some(k) = key {
+            k
+        } else {
+            std::env::var("SERVICE_ACCOUNT_JSON")?
+        };
+        let key = serde_json::from_str(&key)?;
+
         Ok(key)
     }
 
     #[allow(dead_code)]
     async fn new/*<P: Into<PathBuf>>*/(
-        /*document_id: &str,
-        tab_name: &str,
-        token_cache_path: Option<P>,*/
+        key: Option<String>,
     ) -> Result<Self, SheetsError> {
-        let service_account = Self::service_account_from_env()?;
+        let service_account = Self::service_account_from(key)?;
 
         let builder = ServiceAccountAuthenticator::builder(service_account);
         /*let auth = if let Some(path) = token_cache_path {

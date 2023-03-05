@@ -33,6 +33,7 @@ use utoipa::{
     IntoParams, Modify, OpenApi, ToSchema,
 };
 use utoipa_swagger_ui::SwaggerUi;
+//use tracing::{ info, };
 
 use utils::*;
 
@@ -101,7 +102,10 @@ async fn server(
         .await
         .map_err(CustomError::new)?;
 
+    let key = secret_store.get("SERVICE_ACCOUNT_JSON");
+
     let gsheet = SharedDcareGoogleSheet::new(
+        key,
         "19cQ_zAgqkM_iqOiqECP1yVTobuRkFbwk-VfegOys8ZE",
         "工單表",
         ).await
