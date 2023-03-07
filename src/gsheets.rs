@@ -2,25 +2,25 @@
 //extern crate hyper_rustls;
 extern crate google_sheets4 as sheets4;
 
-use std::sync::{Arc, Mutex};
 use hyper::client::HttpConnector;
 use hyper_rustls::HttpsConnector;
 use sheets4::api::ValueRange;
+use std::sync::{Arc, Mutex};
 //use sheets4::{Result, Error};
-use std::default::Default;
 use sheets4::{hyper, hyper_rustls, oauth2, Sheets};
+use std::default::Default;
 use thiserror::Error;
 //use yup_oauth2::{ServiceAccountAuthenticator, ServiceAccountKey};
 use crate::gsheets::oauth2::{ServiceAccountAuthenticator, ServiceAccountKey};
 //use serde::de::DeserializeOwned;
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::path::PathBuf;
+/*use std::path::PathBuf;
 use chrono::{DateTime, Datelike, NaiveDate, Timelike, Utc};
 use crate::dcare_order::{
     OrderNew,
     OrderUpdate,
-};
+};*/
 
 #[derive(Error, Debug)]
 pub enum SheetsError {
@@ -92,7 +92,7 @@ impl GooglesheetPosition {
     }
 
     #[allow(dead_code)]
-    fn shift(&mut self, num: u32) -> Result<(), SheetsError> {
+    pub fn shift(&mut self, num: u32) -> Result<(), SheetsError> {
         self.column = column_shift(&self.column, num);
 
         Ok(())
@@ -105,6 +105,24 @@ impl GooglesheetPosition {
             "\'{}\'!{}{}:{}{}",
             tab_name, self.column, self.row, last, self.row
         ))
+    }
+
+    #[allow(dead_code)]
+    fn column_offset(&self, idx: usize) -> String {
+        let pattern: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+        let pattern: Vec<String> = pattern.chars().map(|e| e.to_string()).collect();
+
+        let base = pattern.len();
+
+        let one = if idx / base > 0 {
+            &pattern[(idx / base - 1) % base]
+        } else {
+            ""
+        };
+        let two = &pattern[idx % base];
+
+        format!("{}{}{}", one, two, self.row)
     }
 }
 
@@ -121,13 +139,11 @@ impl SharedDcareGoogleSheet {
         document_id: &str,
         tab_name: &str,
     ) -> Result<Self, SheetsError> {
-        DcareGoogleSheet::new(key)
-            .await
-            .map(|g| Self {
-                document_id: document_id.to_string(),
-                tab_name: tab_name.to_string(),
-                inner: Arc::new(Mutex::new(g))
-            })
+        DcareGoogleSheet::new(key).await.map(|g| Self {
+            document_id: document_id.to_string(),
+            tab_name: tab_name.to_string(),
+            inner: Arc::new(Mutex::new(g)),
+        })
     }
 
     fn get_sheets(&self) -> Sheets<HttpsConnector<HttpConnector>> {
@@ -150,10 +166,7 @@ impl SharedDcareGoogleSheet {
     }*/
 
     #[allow(dead_code)]
-    pub async fn append(
-        &self,
-        data: Vec<String>
-    ) -> Result<GooglesheetPosition, SheetsError> {
+    pub async fn append(&self, data: Vec<String>) -> Result<GooglesheetPosition, SheetsError> {
         let reqs: Vec<Vec<String>> = vec![data];
 
         let req = ValueRange {
@@ -186,7 +199,7 @@ impl SharedDcareGoogleSheet {
     pub async fn modify(
         &self,
         data: Vec<String>,
-        position: GooglesheetPosition,
+        position: &GooglesheetPosition,
     ) -> Result<(), SheetsError> {
         let num = data.len() as u32;
         let reqs: Vec<Vec<String>> = vec![data];
@@ -229,9 +242,7 @@ struct DcareGoogleSheet {
 
 impl DcareGoogleSheet {
     #[allow(dead_code)]
-    fn service_account_from(
-        key: Option<String>,
-    ) -> Result<ServiceAccountKey, SheetsError> {
+    fn service_account_from(key: Option<String>) -> Result<ServiceAccountKey, SheetsError> {
         let key = if let Some(k) = key {
             k
         } else {
@@ -243,9 +254,7 @@ impl DcareGoogleSheet {
     }
 
     #[allow(dead_code)]
-    async fn new/*<P: Into<PathBuf>>*/(
-        key: Option<String>,
-    ) -> Result<Self, SheetsError> {
+    async fn new(key: Option<String>) -> Result<Self, SheetsError> {
         let service_account = Self::service_account_from(key)?;
 
         let builder = ServiceAccountAuthenticator::builder(service_account);
@@ -263,9 +272,7 @@ impl DcareGoogleSheet {
             .build();
         let sheets = Sheets::new(hyper::Client::builder().build(connector), auth);
 
-        Ok(DcareGoogleSheet {
-            sheets,
-        })
+        Ok(DcareGoogleSheet { sheets })
     }
 
     /*#[allow(dead_code)]
@@ -353,13 +360,14 @@ mod tests {
     #[tokio::test]
     async fn test_service_account_from_env() {
         /* export SERVICE_ACCOUNT_JSON=(cat gsheet_test/proven-space-378115-cfa4fbd08e11.json | jq -c) */
-        let key = DcareGoogleSheet::service_account_from_env();
+        let key = DcareGoogleSheet::service_account_from(None);
 
         assert!(key.is_ok())
     }
 
     async fn try_create() -> Result<SharedDcareGoogleSheet, SheetsError> {
         SharedDcareGoogleSheet::new(
+            None,
             "19cQ_zAgqkM_iqOiqECP1yVTobuRkFbwk-VfegOys8ZE",
             "工單表",
         )
@@ -420,7 +428,7 @@ mod tests {
             row: 32,
         };
 
-        let res = gsheet.modify(req, pos).await;
+        let res = gsheet.modify(req, &pos).await;
         assert!(res.is_ok())
     }
 
@@ -467,7 +475,7 @@ mod tests {
         let _ = pos.shift(24);
         //println!("[debug] new post = {:?}", pos);
 
-        let res = gsheet.modify(req, pos).await;
+        let res = gsheet.modify(req, &pos).await;
         assert!(res.is_ok())
     }
 
@@ -502,5 +510,26 @@ mod tests {
         let last: String = last.chars().rev().collect();
 
         assert_eq!(last, "AC");
+    }
+
+    #[tokio::test]
+    async fn test_column_offset() {
+        let mut pos = GooglesheetPosition {
+            column: 'A'.to_string(),
+            row: 40,
+        };
+
+        let new_pos = pos.column_offset(0);
+        assert_eq!(new_pos, "A40".to_string());
+
+        let new_pos = pos.column_offset(5);
+        assert_eq!(new_pos, "F40".to_string());
+
+        let new_pos = pos.column_offset(26);
+        assert_eq!(new_pos, "AA40".to_string());
+
+        pos.row = 1000;
+        let new_pos = pos.column_offset(27);
+        assert_eq!(new_pos, "AB1000".to_string());
     }
 }

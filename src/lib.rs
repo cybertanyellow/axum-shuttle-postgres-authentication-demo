@@ -6,7 +6,10 @@ mod errors;
 mod gsheets;
 mod utils;
 
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, RwLock},
+};
 
 use axum::{
     extract::{Extension, Query},
@@ -24,8 +27,8 @@ use pbkdf2::password_hash::rand_core::OsRng;
 use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
-use shuttle_service::{error::CustomError, ShuttleAxum};
 use shuttle_secrets::SecretStore;
+use shuttle_service::{error::CustomError, ShuttleAxum};
 use sqlx::Executor;
 use tera::{Context, Tera};
 use utoipa::{
@@ -47,8 +50,16 @@ use dcare_order::{
     order_list_request, order_request, order_update,
 };
 use dcare_user::{
-    logout_response_api, me_api, post_delete_api, post_login_api, post_signup_api,
-    update_myself_api, update_user_api, user_api, users_api,
+    logout_response_api,
+    me_api,
+    post_delete_api,
+    post_login_api,
+    post_signup_api,
+    update_myself_api,
+    update_user_api,
+    user_api,
+    users_api,
+    //SharedUserMap,
 };
 use department::{
     department_create, department_delete, department_list_request, department_request,
@@ -60,6 +71,14 @@ use gsheets::SharedDcareGoogleSheet;
 type Templates = Arc<Tera>;
 type Database = sqlx::PgPool;
 type Random = Arc<Mutex<ChaCha8Rng>>;
+
+type SharedState = Arc<RwLock<AppState>>;
+
+#[derive(Default, Debug)]
+pub struct AppState {
+    users: HashMap<String, (i32, String)>,
+    departments: HashMap<String, (i32, String)>,
+}
 
 const USER_COOKIE_NAME: &str = "user_token";
 const COOKIE_MAX_AGE: &str = "9999999";
@@ -95,8 +114,8 @@ impl ApiResponse {
 
 #[shuttle_service::main]
 async fn server(
-#[shuttle_secrets::Secrets] secret_store: SecretStore,
-#[shuttle_shared_db::Postgres] pool: Database,
+    #[shuttle_secrets::Secrets] secret_store: SecretStore,
+    #[shuttle_shared_db::Postgres] pool: Database,
 ) -> ShuttleAxum {
     pool.execute(include_str!("../schema.sql"))
         .await
@@ -108,8 +127,9 @@ async fn server(
         key,
         "19cQ_zAgqkM_iqOiqECP1yVTobuRkFbwk-VfegOys8ZE",
         "工單表",
-        ).await
-        .ok();
+    )
+    .await
+    .ok();
 
     Ok(sync_wrapper::SyncWrapper::new(get_router(pool, gsheet)))
 }
@@ -128,6 +148,8 @@ pub fn get_router(database: Database, gsheet: Option<SharedDcareGoogleSheet>) ->
 
     let middleware_database = database.clone();
     let random = ChaCha8Rng::seed_from_u64(OsRng.next_u64());
+    //let shared_usermap = SharedUserMap::new();
+    let shared_state = SharedState::default();
 
     #[derive(OpenApi)]
     #[openapi(
@@ -238,8 +260,10 @@ pub fn get_router(database: Database, gsheet: Option<SharedDcareGoogleSheet>) ->
         }))
         .layer(Extension(Arc::new(tera)))
         .layer(Extension(database))
+        //.layer(Extension(Arc::new(shared_usermap)))
+        //.layer(Extension(Arc::clone(&shared_state)))
+        .with_state(Arc::clone(&shared_state))
         .layer(Extension(Arc::new(Mutex::new(random))));
-
 
     if let Some(gsheets) = gsheet {
         router.layer(Extension(gsheets))

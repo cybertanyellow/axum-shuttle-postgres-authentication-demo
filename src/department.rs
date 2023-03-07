@@ -1,4 +1,5 @@
 use axum::{
+    extract::State,
     extract::{Extension, Path, Query},
     http::StatusCode,
     response::IntoResponse,
@@ -28,7 +29,7 @@ use crate::dcare_order::query_order_by_department_id;
 use crate::dcare_user::query_user_by_department_id;
 
 use crate::errors::NotLoggedIn;
-use crate::{ApiResponse, Database, Pagination};
+use crate::{ApiResponse, Database, Pagination, SharedState};
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 struct DepartmentOrg(String);
@@ -370,6 +371,7 @@ pub(crate) async fn department_update(
     Extension(mut current_user): Extension<AuthState>,
     Path(shorten): Path<String>,
     Extension(database): Extension<Database>,
+    State(state): State<SharedState>,
     Json(department): Json<DepartmentUpdate>,
 ) -> impl IntoResponse {
     let mut resp = ApiResponse::new(400, None);
@@ -390,8 +392,33 @@ pub(crate) async fn department_update(
         }
     };
 
-    let shorten = department.shorten.or(Some(orig.shorten));
-    let store_name = department.store_name.or(orig.store_name);
+    //let shorten = department.shorten.or(Some(orig.shorten));
+    //let store_name = department.store_name.or(orig.store_name);
+    let (shorten, store_name) = match (department.shorten, department.store_name) {
+        (Some(shorten), Some(store)) => {
+            if let Some((id, _)) = shared_store_departments_del(state.clone(), &orig.shorten).await
+            {
+                let _ =
+                    shared_store_departments_set(state.clone(), &shorten, &store, Some(id)).await;
+            }
+            (Some(shorten), Some(store))
+        }
+        (Some(shorten), None) => {
+            if let Some((id, store)) =
+                shared_store_departments_del(state.clone(), &orig.shorten).await
+            {
+                let _ =
+                    shared_store_departments_set(state.clone(), &shorten, &store, Some(id)).await;
+            }
+            (Some(shorten), orig.store_name)
+        }
+        (None, Some(store)) => {
+            let _ = shared_store_departments_set(state.clone(), &shorten, &store, None).await;
+            (Some(orig.shorten), Some(store))
+        }
+        (None, None) => (Some(orig.shorten), orig.store_name),
+    };
+
     let address = department.address.or(orig.address);
     let owner = department.owner.or(orig.owner);
     let telephone = department.telephone.or(orig.telephone);
@@ -462,6 +489,7 @@ pub(crate) async fn department_update(
 pub(crate) async fn department_delete(
     Extension(mut current_user): Extension<AuthState>,
     Extension(database): Extension<Database>,
+    State(state): State<SharedState>,
     Path(shorten): Path<String>,
     pair: Query<DepartmentOrgPair>,
 ) -> impl IntoResponse {
@@ -528,6 +556,7 @@ pub(crate) async fn department_delete(
         .await
         .is_ok()
     {
+        let _ = shared_store_departments_del(state.clone(), &shorten).await;
         resp.update(200, Some("delete success".to_string()));
     }
     (StatusCode::OK, Json(resp)).into_response()
@@ -602,6 +631,7 @@ pub(crate) async fn department_list_request(
 )]
 pub(crate) async fn department_create(
     Extension(database): Extension<Database>,
+    State(state): State<SharedState>,
     Extension(mut current_user): Extension<AuthState>,
     Json(department): Json<DepartmentNew>,
 ) -> impl IntoResponse {
@@ -626,8 +656,8 @@ pub(crate) async fn department_create(
             $1, $2, $3, $4, $5, $6
         ) RETURNING id;"#;
     let fetch_one: Result<(i32,), _> = sqlx::query_as(INSERT_QUERY)
-        .bind(department.shorten)
-        .bind(department.store_name)
+        .bind(&department.shorten)
+        .bind(&department.store_name)
         .bind(department.owner)
         .bind(department.telephone)
         .bind(department.type_mask)
@@ -642,6 +672,10 @@ pub(crate) async fn department_create(
                 None => Ok(()),
             };
             if org_done.is_ok() {
+                if let Some(store) = department.store_name {
+                    shared_store_departments_set(state, &department.shorten, &store, Some(id))
+                        .await;
+                }
                 resp.update(200, Some(format!("department{id} create success")));
             } else {
                 resp.update(400, Some("department organization update fail".to_string()));
@@ -1171,4 +1205,68 @@ async fn org_delete(
     }
 
     Ok(do_all)
+}
+
+pub async fn shared_store_departments_init(database: &Database, state: SharedState) -> Result<()> {
+    if !&state.read().unwrap().departments.is_empty() {
+        return Ok(());
+    }
+
+    const QUERY: &str = "SELECT * FROM departments;";
+
+    if let Ok(departments) = sqlx::query_as::<_, DepartmentRawInfo>(QUERY)
+        .fetch_all(database)
+        .await
+    {
+        for d in departments {
+            if let Some(store_name) = d.store_name {
+                state
+                    .write()
+                    .unwrap()
+                    .departments
+                    .insert(d.shorten, (d.id, store_name));
+            }
+        }
+    } else {
+    }
+    Ok(())
+}
+
+pub(crate) async fn shared_store_departments_get(
+    state: SharedState,
+    shorten: &str,
+) -> Option<(i32, String)> {
+    let departments = &state.read().unwrap().departments;
+
+    if let Some((id, store_name)) = departments.get(shorten) {
+        Some((*id, store_name.clone()))
+    } else {
+        None
+    }
+}
+
+async fn shared_store_departments_set(
+    state: SharedState,
+    shorten: &str,
+    store_name: &str,
+    id: Option<i32>,
+) -> Option<(i32, String)> {
+    let id = if let Some(id) = id {
+        id
+    } else {
+        if let Some((id, _)) = shared_store_departments_get(state.clone(), shorten).await {
+            id
+        } else {
+            return None;
+        }
+    };
+    state
+        .write()
+        .unwrap()
+        .departments
+        .insert(shorten.to_string(), (id, store_name.to_string()))
+}
+
+async fn shared_store_departments_del(state: SharedState, shorten: &str) -> Option<(i32, String)> {
+    state.write().unwrap().departments.remove(shorten)
 }

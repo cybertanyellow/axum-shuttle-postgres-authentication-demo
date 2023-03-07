@@ -3,6 +3,7 @@
 //use std::{os::unix::prelude::PermissionsExt, fs::Permissions};
 
 use axum::{
+    extract::State,
     extract::{Extension, Path, Query},
     http::StatusCode,
     response::IntoResponse,
@@ -11,6 +12,12 @@ use axum::{
 };
 use http::Response;
 //use http_body::Full;
+/*use std::sync::{
+    //Mutex,
+    RwLock,
+    Arc,
+};*/
+//use std::collections::HashMap;
 
 use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
@@ -27,8 +34,43 @@ use crate::authentication::{
 use crate::errors::NotLoggedIn;
 //use crate::errors::{LoginError, NoUser, SignupError};
 use crate::dcare_order::query_order_by_user_id;
-use crate::department::department_shorten_query;
-use crate::{ApiResponse, Database, Random, COOKIE_MAX_AGE, USER_COOKIE_NAME};
+use crate::department::{department_shorten_query, shared_store_departments_init};
+use crate::{ApiResponse, Database, Random, SharedState, COOKIE_MAX_AGE, USER_COOKIE_NAME};
+
+/*#[derive(Clone)]
+pub struct SharedUserMap {
+    inner: Arc<Mutex<SharedUserMapInner>>,
+}
+
+struct SharedUserMapInner {
+    data: HashMap<String, String>,
+}
+
+impl SharedUserMap {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(SharedUserMapInner {
+                data: HashMap::new(),
+            }))
+        }
+    }
+
+    pub fn with_map<F, T>(&self, func: F) -> T
+        where
+        F: FnOnce(&mut HashMap<String, String>) -> T,
+    {
+        let mut lock = self.inner.lock().unwrap();
+        func(&mut lock.data)
+    }
+
+    pub fn with_value<F, T>(&self, key: String, func: F) -> T
+        where
+    F: FnOnce(Option<&str>) -> T,
+    {
+        let lock = self.inner.lock().unwrap();
+        func(lock.data.get(&key).map(|string| string.as_str()))
+    }
+}*/
 
 #[derive(Deserialize, IntoParams)]
 pub struct UserListQuery {
@@ -376,6 +418,7 @@ pub struct UserNew {
 )]
 pub(crate) async fn post_signup_api(
     Extension(database): Extension<Database>,
+    State(state): State<SharedState>,
     Extension(random): Extension<Random>,
     Json(user): Json<UserNew>,
 ) -> impl IntoResponse {
@@ -431,7 +474,10 @@ pub(crate) async fn post_signup_api(
     )
     .await
     {
-        Ok(_session_token) => (StatusCode::OK, Json(resp)).into_response(),
+        Ok(_session_token) => {
+            let _ = shared_store_users_set(state, &user.account, &user.username).await;
+            (StatusCode::OK, Json(resp)).into_response()
+        }
         Err(error) => {
             resp.message = Some(format!("{error}"));
             resp.code = 500;
@@ -487,9 +533,14 @@ impl ResponseUserLogin {
 )]
 pub(crate) async fn post_login_api(
     Extension(database): Extension<Database>,
+    State(state): State<SharedState>,
     Extension(random): Extension<Random>,
     Json(user): Json<UserLogin>,
 ) -> impl IntoResponse {
+    let _ = shared_store_users_init(&database, state.clone()).await;
+    let _ = shared_store_departments_init(&database, state.clone()).await;
+    info!("[debug] dump state = {:?}", state);
+
     match login(&database, random, &user.account, &user.password).await {
         Ok((session_token, permission)) => {
             let _ = update_login_at(&database, &user.account).await;
@@ -553,8 +604,9 @@ pub(crate) async fn post_login_api(
     ),
 )]
 pub(crate) async fn post_delete_api(
-    Extension(mut current_user): Extension<AuthState>,
     Extension(database): Extension<Database>,
+    State(state): State<SharedState>,
+    Extension(mut current_user): Extension<AuthState>,
     Path(account): Path<String>,
 ) -> impl IntoResponse {
     let mut resp = ApiResponse {
@@ -586,7 +638,11 @@ pub(crate) async fn post_delete_api(
     }
 
     match delete_user2(&database, &account).await {
-        Ok(_) => (StatusCode::OK, Json(resp)).into_response(),
+        Ok(_) => {
+            let _ = shared_store_users_del(state, &account).await;
+
+            (StatusCode::OK, Json(resp)).into_response()
+        }
         Err(e) => {
             resp.code = 500;
             resp.message = Some(format!("{e}"));
@@ -780,6 +836,7 @@ pub struct UpdateMe {
 pub(crate) async fn update_myself_api(
     Extension(mut current_user): Extension<AuthState>,
     Extension(database): Extension<Database>,
+    State(state): State<SharedState>,
     Json(user): Json<UpdateMe>,
 ) -> impl IntoResponse {
     let mut resp = ApiResponse {
@@ -829,7 +886,10 @@ pub(crate) async fn update_myself_api(
                 .fetch_one(&database)
                 .await;
         match return_one {
-            Ok((id,)) => info!("update username ok {id}"),
+            Ok((id,)) => {
+                let _ = shared_store_users_set(state, &account, &username).await;
+                info!("update username ok {id}")
+            }
             Err(err) => {
                 resp.message = Some(format!("update username fail {err}"));
                 resp.code = 500;
@@ -1177,4 +1237,62 @@ pub(crate) async fn query_user_by_department_id(database: &Database, did: i32) -
     } else {
         None
     }
+}
+
+async fn shared_store_users_init(database: &Database, state: SharedState) -> Result<()> {
+    if !&state.read().unwrap().users.is_empty() {
+        return Ok(());
+    }
+
+    const QUERY: &str = "SELECT * FROM users;";
+
+    if let Ok(users) = sqlx::query_as::<_, UserRawInfo>(QUERY)
+        .fetch_all(database)
+        .await
+    {
+        for u in users {
+            if let Some(username) = u.username {
+                state
+                    .write()
+                    .unwrap()
+                    .users
+                    .insert(u.account, (u.id, username));
+            }
+        }
+    } else {
+    }
+    Ok(())
+}
+
+pub(crate) async fn shared_store_users_get(
+    state: SharedState,
+    account: &str,
+) -> Option<(i32, String)> {
+    let users = &state.read().unwrap().users;
+
+    if let Some((id, username)) = users.get(account) {
+        Some((*id, username.clone()))
+    } else {
+        None
+    }
+}
+
+async fn shared_store_users_set(
+    state: SharedState,
+    account: &str,
+    username: &str,
+) -> Option<(i32, String)> {
+    if let Some((id, _)) = shared_store_users_get(state.clone(), account).await {
+        state
+            .write()
+            .unwrap()
+            .users
+            .insert(account.to_string(), (id, username.to_string()))
+    } else {
+        None
+    }
+}
+
+async fn shared_store_users_del(state: SharedState, account: &str) -> Option<(i32, String)> {
+    state.write().unwrap().users.remove(account)
 }

@@ -1,4 +1,5 @@
 use axum::{
+    extract::State,
     extract::{Extension, Path, Query},
     http::StatusCode,
     response::IntoResponse,
@@ -11,22 +12,16 @@ use bit_vec::BitVec;
 use chrono::{DateTime, Datelike, NaiveDate, Timelike, Utc};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 //use serde_json::json;
-use tracing::{
-    info,
-    error,
-};
+use tracing::{debug, error, info};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{authentication::AuthState, Pagination};
 
-use crate::dcare_user::query_user_id;
-use crate::department::department_shorten_query;
+use crate::dcare_user::{query_user_id, shared_store_users_get};
+use crate::department::{department_shorten_query, shared_store_departments_get};
 use crate::errors::NotLoggedIn;
-use crate::{ApiResponse, Database, Random};
-use crate::gsheets::{
-    SharedDcareGoogleSheet,
-    GooglesheetPosition
-};
+use crate::gsheets::{GooglesheetPosition, SharedDcareGoogleSheet};
+use crate::{ApiResponse, Database, Random, SharedState};
 
 type Price = i32;
 
@@ -263,7 +258,7 @@ pub struct OrderInfo {
     maintainer: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams, Clone)]
 pub struct OrderUpdate {
     #[schema(example = "department's shorten as ADM, BM, ...")]
     department: Option<String>,
@@ -288,7 +283,7 @@ pub struct OrderUpdate {
     remark: Option<String>,
     cost: Option<i32>,
     prepaid_free: Option<i32>,
-
+    confirmed_paid: Option<i32>,
     status: Option<String>,
     life_cycle: Option<String>,
     #[schema(example = "user's account")]
@@ -498,9 +493,11 @@ pub(crate) async fn order_update(
     Extension(gsheets): Extension<SharedDcareGoogleSheet>,
     Path(sn): Path<String>,
     Extension(database): Extension<Database>,
+    State(state): State<SharedState>,
     Json(order): Json<OrderUpdate>,
 ) -> Json<OrderApiResponse> {
     let mut resp = OrderApiResponse::new(400, None);
+    let order_dup = order.clone();
 
     let issuer = if let Some(user) = current_user.get_user().await {
         user
@@ -659,9 +656,6 @@ pub(crate) async fn order_update(
     let cost = order.cost.or(orig.cost);
     let prepaid_free = order.prepaid_free.or(orig.prepaid_free);
 
-    /*let _ = gsheets_order_update(gsheets.clone(), gpos, &order)
-        .await;*/
-
     const UPDATE_QUERY: &str = r#"
         WITH order_updated AS (
             UPDATE orders SET 
@@ -734,6 +728,10 @@ pub(crate) async fn order_update(
 
     match fetch_one {
         Ok((id,)) => {
+            if let Ok(sheet_pos) = OrderGoogleSheetSql::from_query(&database, orig.id).await {
+                let _ = gsheets_order_update(gsheets.clone(), state, sheet_pos, &order_dup).await;
+            }
+
             resp.update(
                 200,
                 Some(format!("order update success - history{id}")),
@@ -876,40 +874,201 @@ pub struct OrderGoogleSheetSql {
 
 impl OrderGoogleSheetSql {
     #[allow(dead_code)]
-    async fn from_query(database: &Database, order_id: i32) -> Option<Self> {
+    async fn from_query(database: &Database, order_id: i32) -> Result<GooglesheetPosition> {
         let query = format!("SELECT * FROM order_gsheets WHERE order_id = {order_id};");
 
         sqlx::query_as::<_, Self>(&query)
-            .fetch_optional(database)
+            .fetch_one(database)
             .await
-            .unwrap_or(None)
+            .map_err(|e| anyhow!("{e}"))
+            .map(|g| GooglesheetPosition {
+                column: g.sheet_column,
+                row: g.sheet_row,
+            })
     }
 }
 
 async fn gsheets_order_append(
     gsheets: SharedDcareGoogleSheet,
+    state: SharedState,
     order: &OrderNew,
     issue_at: DateTime<Utc>,
-    sn: &str
+    sn: &str,
 ) -> GooglesheetPosition {
-    let req: Vec<String> = vec![issue_at.to_string(), sn.to_string(), order.department.clone()];
+    let department = if let Some((_, department)) =
+        shared_store_departments_get(state.clone(), &order.department).await
+    {
+        department
+    } else {
+        "".to_string()
+    };
+    let contact = if let Some(ref contact) = order.contact {
+        if let Some((_, username)) = shared_store_users_get(state.clone(), contact).await {
+            username
+        } else {
+            "".to_string()
+        }
+    } else {
+        "".to_string()
+    };
 
-    gsheets.append(req)
-        .await
-        .unwrap_or_default()
+    let customer_name = order
+        .customer_name
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let customer_phone = order.customer_phone.to_string();
+    let customer_addr = order
+        .customer_address
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let brand = order.brand.to_string();
+    let model = order
+        .model
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let purchase_at = if let Some(ref purchase_at) = order.purchase_at {
+        purchase_at.to_string()
+    } else {
+        "none".to_string()
+    };
+    let accessory1 = order
+        .accessory1
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let accessory2 = order
+        .accessory2
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let accessory3 = order
+        .accessory_other
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let appearance = format!("{:?}", order.appearance); /* TODO sync with APP */
+    /* TODO order.appearance_other */
+    let service = order
+        .service
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let fault1 = order
+        .fault1
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let fault2 = order
+        .fault2
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let fault3 = order
+        .fault_other
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let photo_url = order
+        .photo_url
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let remark = order
+        .remark
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let cost = if let Some(ref cost) = order.cost {
+        format!("{cost}")
+    } else {
+        "".to_string()
+    };
+    let prepaid_free = if let Some(ref cost) = order.prepaid_free {
+        format!("{cost}")
+    } else {
+        "".to_string()
+    };
+    let final_cost = String::from(""); /* TODO sync with APP */
+    let status = order.status.to_string();
+    let life_cycle = order
+        .life_cycle /* TODO sync with APP */
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+
+    let req: Vec<String> = vec![
+        issue_at.to_string(),
+        sn.to_string(),
+        department,
+        contact,
+        customer_name,
+        customer_phone,
+        customer_addr,
+        brand,
+        model,
+        purchase_at,
+        accessory1,
+        accessory2,
+        accessory3,
+        appearance,
+        service,
+        fault1,
+        fault2,
+        fault3,
+        photo_url,
+        remark,
+        cost,
+        prepaid_free,
+        final_cost,
+        status,
+        life_cycle,
+    ];
+
+    gsheets.append(req).await.unwrap_or_default()
 }
 
 async fn gsheets_order_update(
     gsheets: SharedDcareGoogleSheet,
-    pos: GooglesheetPosition,
+    _state: SharedState,
+    mut pos: GooglesheetPosition,
     order: &OrderUpdate,
 ) -> Result<()> {
-    /* TODO */
-    let req: Vec<String> = vec!["TODO".to_string(), "TODO".to_string()];
+    let mut data: Vec<String> = Vec::new();
 
-    gsheets.modify(req, pos)
-        .await
-        .map_err(|e| anyhow!("{e}"))
+    if let Some(ref confirmed_paid) = order.confirmed_paid {
+        let paids = format!("{confirmed_paid}");
+        pos.column = "W".to_string();
+
+        if order.life_cycle.is_some() {
+            data.push(paids);
+        } else {
+            if let Err(e) = gsheets.modify(vec![paids], &pos).await {
+                error!("modify confirmed-paid in {:?} fail - {e}", pos);
+            } else {
+                debug!("modify confirmed-paid in {:?} success", pos);
+            }
+        }
+    }
+
+    if let Some(ref life_cycle) = order.life_cycle {
+        let life_cycle = life_cycle.to_string();
+
+        if data.is_empty() {
+            pos.column = "X".to_string();
+        }
+
+        data.push(life_cycle);
+        if let Err(e) = gsheets.modify(data, &pos).await {
+            error!("modify confirmed-paid in {:?} fail - {e}", pos);
+        } else {
+            debug!("modify confirmed-paid in {:?} success", pos);
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
@@ -930,6 +1089,7 @@ struct OrderNewRes {
 )]
 pub(crate) async fn order_create(
     Extension(database): Extension<Database>,
+    State(state): State<SharedState>,
     Extension(_random): Extension<Random>,
     Extension(gsheets): Extension<SharedDcareGoogleSheet>,
     Extension(mut current_user): Extension<AuthState>,
@@ -1143,18 +1303,16 @@ pub(crate) async fn order_create(
     info!("[debug] fetch_one as {:?}", fetch_one);
 
     let order_id = match fetch_one {
-        Ok((id,)) => {
-            id
-        }
+        Ok((id,)) => id,
         Err(e) => {
             resp.update(500, Some(format!("{e}")), None, None);
             error!("{:?}", &resp);
-            return Json(resp)
+            return Json(resp);
         }
     };
 
-    let gsheet_pos = gsheets_order_append(gsheets.clone(), &order, issue_at, &sn.0)
-        .await;
+    let gsheet_pos =
+        gsheets_order_append(gsheets.clone(), state.clone(), &order, issue_at, &sn.0).await;
     info!("[debug] gsheet_pos = {:?}", gsheet_pos);
 
     const INSERT_QUERY2: &str = r#"
