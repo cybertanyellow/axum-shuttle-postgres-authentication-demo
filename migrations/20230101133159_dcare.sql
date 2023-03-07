@@ -128,7 +128,8 @@ CREATE TABLE IF NOT EXISTS orders (
     remark text,                  -- 備註
     cost integer,                 -- 報價
     prepaid_free integer,         -- 預收款
-
+    confirmed_paid integer,
+    warranty_expired bool,
     life_cycle text,
     status_id integer REFERENCES status (id) ON DELETE CASCADE,    -- 工單狀態
     servicer_id integer REFERENCES users (id) ON DELETE CASCADE,        -- 客服專員

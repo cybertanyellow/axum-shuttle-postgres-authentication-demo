@@ -9,7 +9,7 @@ use axum::{
 
 use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
-use chrono::{DateTime, Datelike, NaiveDate, Timelike, Utc};
+use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike, Utc};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 //use serde_json::json;
 use tracing::{debug, error, info};
@@ -284,6 +284,7 @@ pub struct OrderUpdate {
     cost: Option<i32>,
     prepaid_free: Option<i32>,
     confirmed_paid: Option<i32>,
+    warranty_expired: bool,
     status: Option<String>,
     life_cycle: Option<String>,
     #[schema(example = "user's account")]
@@ -321,7 +322,8 @@ pub struct OrderNew {
     remark: Option<String>,
     cost: Option<i32>,
     prepaid_free: Option<i32>,
-
+    confirmed_paid: Option<i32>,
+    warranty_expired: bool,
     status: String,
     life_cycle: Option<String>,
     #[schema(example = "user's account")]
@@ -849,7 +851,9 @@ pub(crate) async fn order_list_request(
             LEFT JOIN users u1 ON u1.id = o.contact_id
             LEFT JOIN users u2 ON u2.id = o.servicer_id
             LEFT JOIN users u3 ON u3.id = o.maintainer_id
-        {where_dep} LIMIT {entries} OFFSET {offset};
+        {where_dep}
+        ORDER BY issue_at
+        LIMIT {entries} OFFSET {offset};
     "#
     );
 
@@ -929,11 +933,7 @@ async fn gsheets_order_append(
         .as_ref()
         .unwrap_or(&String::from(""))
         .to_string();
-    let purchase_at = if let Some(ref purchase_at) = order.purchase_at {
-        purchase_at.to_string()
-    } else {
-        "none".to_string()
-    };
+    let purchase_at = "deprecated".to_string();
     let accessory1 = order
         .accessory1
         .as_ref()
@@ -971,11 +971,7 @@ async fn gsheets_order_append(
         .as_ref()
         .unwrap_or(&String::from(""))
         .to_string();
-    let photo_url = order
-        .photo_url
-        .as_ref()
-        .unwrap_or(&String::from(""))
-        .to_string();
+    let photo_url = "deprecated".to_string();
     let remark = order
         .remark
         .as_ref()
@@ -991,16 +987,23 @@ async fn gsheets_order_append(
     } else {
         "".to_string()
     };
-    let final_cost = String::from(""); /* TODO sync with APP */
-    let status = order.status.to_string();
+    let confirmed_paid = if let Some(ref cost) = order.confirmed_paid {
+        format!("{cost}")
+    } else {
+        "".to_string()
+    };
     let life_cycle = order
         .life_cycle /* TODO sync with APP */
         .as_ref()
         .unwrap_or(&String::from(""))
         .to_string();
+    let status = order.status.to_string();
+
+    let issue_at: DateTime<Local> = DateTime::from(issue_at);
+    let issue_at = format!("{}", issue_at.format("%Y/%m/%d %H:%M:%S"));
 
     let req: Vec<String> = vec![
-        issue_at.to_string(),
+        issue_at,
         sn.to_string(),
         department,
         contact,
@@ -1022,9 +1025,9 @@ async fn gsheets_order_append(
         remark,
         cost,
         prepaid_free,
-        final_cost,
-        status,
+        confirmed_paid,
         life_cycle,
+        status,
     ];
 
     gsheets.append(req).await.unwrap_or_default()

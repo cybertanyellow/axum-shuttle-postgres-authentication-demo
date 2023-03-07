@@ -532,4 +532,15 @@ mod tests {
         let new_pos = pos.column_offset(27);
         assert_eq!(new_pos, "AB1000".to_string());
     }
+
+    #[tokio::test]
+    async fn test_date_time() {
+        use chrono::{DateTime, Local, Utc};
+        let issue_at = Utc::now();
+        let local_at: DateTime<Local> = DateTime::from(issue_at);
+
+        let formated = format!("{}", local_at.format("%Y/%m/%d %H:%M:%S"));
+
+        assert_eq!(formated, "2023/1/12 下午 10:10:26".to_string())
+    }
 }
