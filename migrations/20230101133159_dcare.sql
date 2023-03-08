@@ -1,4 +1,5 @@
 -- DROP TABLE IF EXISTS sessions;
+-- DROP TABLE IF EXISTS order_gsheets;
 -- DROP TABLE IF EXISTS order_histories;
 -- DROP TABLE IF EXISTS orders;
 -- DROP TABLE IF EXISTS users;
@@ -35,7 +36,8 @@ CREATE TABLE IF NOT EXISTS departments (
     owner text,                         -- 負責人
     telephone text,                     -- 門市電話
     address text,                       -- 門市地址
-    type_mask bit(8)			-- Disable (X), ADM(Y)....
+    type_mask bit(8),			-- Disable (X), ADM(Y)....
+    extra text                       	-- future usage?
 );
 INSERT INTO departments ( shorten, store_name, type_mask ) VALUES ( 'ADM', '總部', b'10000000')
 ON CONFLICT (shorten) DO NOTHING;
@@ -45,7 +47,8 @@ CREATE TABLE IF NOT EXISTS department_orgs (
     create_at timestamptz NOT NULL DEFAULT NOW(),   -- 創建時間
 
     parent_id integer REFERENCES departments (id) ON DELETE CASCADE,
-    child_id integer REFERENCES departments (id) ON DELETE CASCADE
+    child_id integer REFERENCES departments (id) ON DELETE CASCADE,
+    extra text                       	-- future usage?
 );
 
 -- 工作人員, admin也算進來
@@ -64,7 +67,8 @@ CREATE TABLE IF NOT EXISTS users (
 
     create_at timestamptz NOT NULL DEFAULT NOW(),   -- 創建時間
     login_at timestamptz,            -- 登人時間(最後)
-    update_at timestamptz            -- 修改時間
+    update_at timestamptz,            -- 修改時間
+    extra text                       	-- future usage?
 );
 -- '{"account":"administrator","password":"fy90676855","username":"i-am-superuser","worker_id":"AA00001","title":"superuser","department":"backend","phone":"0900123456","email":"admin@fika.com","permission":{"storage":[1],"nbits":8}}'
 
@@ -127,11 +131,21 @@ CREATE TABLE IF NOT EXISTS orders (
     remark text,                  -- 備註
     cost integer,                 -- 報價
     prepaid_free integer,         -- 預收款
-
+    confirmed_paid integer,
+    warranty_expired bool,
     life_cycle text,
     status_id integer REFERENCES status (id) ON DELETE CASCADE,    -- 工單狀態
     servicer_id integer REFERENCES users (id) ON DELETE CASCADE,        -- 客服專員
-    maintainer_id integer REFERENCES users (id) ON DELETE CASCADE       -- 維保人員
+    maintainer_id integer REFERENCES users (id) ON DELETE CASCADE,       -- 維保人員
+    extra text                       	-- future usage?
+);
+
+CREATE TABLE IF NOT EXISTS order_gsheets (
+    id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+
+    order_id integer REFERENCES orders (id) ON DELETE CASCADE,     -- 工單
+    sheet_column text,
+    sheet_row integer
 );
 
 CREATE TABLE IF NOT EXISTS order_histories (

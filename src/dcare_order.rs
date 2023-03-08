@@ -1,4 +1,5 @@
 use axum::{
+    extract::State,
     extract::{Extension, Path, Query},
     http::StatusCode,
     response::IntoResponse,
@@ -8,18 +9,22 @@ use axum::{
 
 use anyhow::{anyhow, Result};
 use bit_vec::BitVec;
-use chrono::{DateTime, Datelike, NaiveDate, Timelike, Utc};
+use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike, Utc};
 use serde::{/*serde_if_integer128, */ Deserialize, Serialize};
 //use serde_json::json;
-use tracing::error;
+use tracing::{
+    debug, error,
+    //info,
+};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{authentication::AuthState, Pagination};
 
-use crate::dcare_user::query_user_id;
-use crate::department::department_shorten_query;
+use crate::dcare_user::{query_user_id, shared_store_users_get};
+use crate::department::{department_shorten_query, shared_store_departments_get};
 use crate::errors::NotLoggedIn;
-use crate::{ApiResponse, Database, Random};
+use crate::gsheets::{GooglesheetPosition, SharedDcareGoogleSheet};
+use crate::{ApiResponse, Database, Random, SharedState};
 
 type Price = i32;
 
@@ -213,7 +218,8 @@ pub struct OrderRawInfo {
     remark: Option<String>,
     cost: Option<i32>,
     prepaid_free: Option<i32>,
-
+    confirmed_paid: Option<i32>,
+    warranty_expired: Option<bool>,
     status_id: Option<i32>,
     life_cycle: String,
     servicer_id: Option<i32>,
@@ -249,14 +255,15 @@ pub struct OrderInfo {
     remark: Option<String>,
     cost: Option<i32>,
     prepaid_free: Option<i32>,
-
+    confirmed_paid: Option<i32>,
+    warranty_expired: Option<bool>,
     status: String,
     life_cycle: String,
     servicer: Option<String>,
     maintainer: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams, Clone)]
 pub struct OrderUpdate {
     #[schema(example = "department's shorten as ADM, BM, ...")]
     department: Option<String>,
@@ -281,7 +288,8 @@ pub struct OrderUpdate {
     remark: Option<String>,
     cost: Option<i32>,
     prepaid_free: Option<i32>,
-
+    confirmed_paid: Option<i32>,
+    warranty_expired: Option<bool>,
     status: Option<String>,
     life_cycle: Option<String>,
     #[schema(example = "user's account")]
@@ -319,7 +327,8 @@ pub struct OrderNew {
     remark: Option<String>,
     cost: Option<i32>,
     prepaid_free: Option<i32>,
-
+    confirmed_paid: Option<i32>,
+    warranty_expired: Option<bool>,
     status: String,
     life_cycle: Option<String>,
     #[schema(example = "user's account")]
@@ -488,11 +497,14 @@ pub(crate) async fn order_request(
 )]
 pub(crate) async fn order_update(
     Extension(mut current_user): Extension<AuthState>,
+    Extension(gsheets): Extension<SharedDcareGoogleSheet>,
     Path(sn): Path<String>,
     Extension(database): Extension<Database>,
+    State(state): State<SharedState>,
     Json(order): Json<OrderUpdate>,
 ) -> Json<OrderApiResponse> {
     let mut resp = OrderApiResponse::new(400, None);
+    let order_dup = order.clone();
 
     let issuer = if let Some(user) = current_user.get_user().await {
         user
@@ -650,6 +662,8 @@ pub(crate) async fn order_update(
     let remark = order.remark.or(orig.remark);
     let cost = order.cost.or(orig.cost);
     let prepaid_free = order.prepaid_free.or(orig.prepaid_free);
+    let confirmed_paid = order.confirmed_paid.or(orig.confirmed_paid);
+    let warranty_expired = order.warranty_expired.or(orig.warranty_expired);
 
     const UPDATE_QUERY: &str = r#"
         WITH order_updated AS (
@@ -672,6 +686,8 @@ pub(crate) async fn order_update(
                 remark = $13,
                 cost = $14,
                 prepaid_free = $15,
+                confirmed_paid = $25,
+                warranty_expired = $26,
                 status_id = $16,
                 life_cycle = $24,
                 servicer_id = $17,
@@ -718,11 +734,17 @@ pub(crate) async fn order_update(
         .bind(&customer_phone)
         .bind(model_id)
         .bind(life_cycle)
+        .bind(confirmed_paid)
+        .bind(warranty_expired)
         .fetch_one(&database)
         .await;
 
     match fetch_one {
         Ok((id,)) => {
+            if let Ok(sheet_pos) = OrderGoogleSheetSql::from_query(&database, orig.id).await {
+                let _ = gsheets_order_update(gsheets.clone(), state, sheet_pos, &order_dup).await;
+            }
+
             resp.update(
                 200,
                 Some(format!("order update success - history{id}")),
@@ -840,7 +862,9 @@ pub(crate) async fn order_list_request(
             LEFT JOIN users u1 ON u1.id = o.contact_id
             LEFT JOIN users u2 ON u2.id = o.servicer_id
             LEFT JOIN users u3 ON u3.id = o.maintainer_id
-        {where_dep} LIMIT {entries} OFFSET {offset};
+        {where_dep}
+        ORDER BY issue_at
+        LIMIT {entries} OFFSET {offset};
     "#
     );
 
@@ -852,6 +876,219 @@ pub(crate) async fn order_list_request(
         resp.code = 200;
     }
     (StatusCode::OK, Json(resp)).into_response()
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct OrderGoogleSheetSql {
+    id: i32,
+
+    order_id: i32,
+    sheet_column: String,
+    sheet_row: i32,
+}
+
+impl OrderGoogleSheetSql {
+    #[allow(dead_code)]
+    async fn from_query(database: &Database, order_id: i32) -> Result<GooglesheetPosition> {
+        let query = format!("SELECT * FROM order_gsheets WHERE order_id = {order_id};");
+
+        sqlx::query_as::<_, Self>(&query)
+            .fetch_one(database)
+            .await
+            .map_err(|e| anyhow!("{e}"))
+            .map(|g| GooglesheetPosition {
+                column: g.sheet_column,
+                row: g.sheet_row,
+            })
+    }
+}
+
+async fn gsheets_order_append(
+    gsheets: SharedDcareGoogleSheet,
+    state: SharedState,
+    order: &OrderNew,
+    issue_at: DateTime<Utc>,
+    sn: &str,
+) -> GooglesheetPosition {
+    let department = if let Some((_, department)) =
+        shared_store_departments_get(state.clone(), &order.department).await
+    {
+        department
+    } else {
+        "".to_string()
+    };
+    let contact = if let Some(ref contact) = order.contact {
+        if let Some((_, username)) = shared_store_users_get(state.clone(), contact).await {
+            username
+        } else {
+            "".to_string()
+        }
+    } else {
+        "".to_string()
+    };
+
+    let customer_name = order
+        .customer_name
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let customer_phone = order.customer_phone.to_string();
+    let customer_addr = order
+        .customer_address
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let brand = order.brand.to_string();
+    let model = order
+        .model
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let purchase_at = "deprecated".to_string();
+    let accessory1 = order
+        .accessory1
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let accessory2 = order
+        .accessory2
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let accessory3 = order
+        .accessory_other
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let appearance = format!("{:?}", order.appearance); /* TODO sync with APP */
+    /* TODO order.appearance_other */
+    let service = order
+        .service
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let fault1 = order
+        .fault1
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let fault2 = order
+        .fault2
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let fault3 = order
+        .fault_other
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let photo_url = "deprecated".to_string();
+    let remark = order
+        .remark
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let cost = if let Some(ref cost) = order.cost {
+        format!("{cost}")
+    } else {
+        "".to_string()
+    };
+    let prepaid_free = if let Some(ref cost) = order.prepaid_free {
+        format!("{cost}")
+    } else {
+        "".to_string()
+    };
+    let confirmed_paid = if let Some(ref cost) = order.confirmed_paid {
+        format!("{cost}")
+    } else {
+        "".to_string()
+    };
+    let life_cycle = order
+        .life_cycle /* TODO sync with APP */
+        .as_ref()
+        .unwrap_or(&String::from(""))
+        .to_string();
+    let status = order.status.to_string();
+
+    let issue_at: DateTime<Local> = DateTime::from(issue_at);
+    let issue_at = format!("{}", issue_at.format("%Y/%m/%d %H:%M:%S"));
+
+    let req: Vec<String> = vec![
+        issue_at,
+        sn.to_string(),
+        department,
+        contact,
+        customer_name,
+        customer_phone,
+        customer_addr,
+        brand,
+        model,
+        purchase_at,
+        accessory1,
+        accessory2,
+        accessory3,
+        appearance,
+        service,
+        fault1,
+        fault2,
+        fault3,
+        photo_url,
+        remark,
+        cost,
+        prepaid_free,
+        confirmed_paid,
+        life_cycle,
+        status,
+    ];
+
+    gsheets.append(req).await.unwrap_or_default()
+}
+
+async fn gsheets_order_update(
+    gsheets: SharedDcareGoogleSheet,
+    _state: SharedState,
+    mut pos: GooglesheetPosition,
+    order: &OrderUpdate,
+) -> Result<()> {
+    let mut data: Vec<String> = Vec::new();
+
+    if let Some(ref confirmed_paid) = order.confirmed_paid {
+        let paids = format!("{confirmed_paid}");
+        pos.column = "W".to_string();
+
+        if order.life_cycle.is_some() {
+            data.push(paids);
+        } else {
+            if let Err(e) = gsheets.modify(vec![paids], &pos).await {
+                error!("modify confirmed-paid in {:?} fail - {e}", pos);
+            } else {
+                debug!("modify confirmed-paid in {:?} success", pos);
+            }
+        }
+    }
+
+    if let Some(ref life_cycle) = order.life_cycle {
+        let life_cycle = life_cycle.to_string();
+
+        if data.is_empty() {
+            pos.column = "X".to_string();
+        }
+
+        data.push(life_cycle);
+        if let Err(e) = gsheets.modify(data, &pos).await {
+            error!("modify confirmed-paid in {:?} fail - {e}", pos);
+        } else {
+            debug!("modify confirmed-paid in {:?} success", pos);
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+struct OrderNewRes {
+    id: i32,
+    issue_at: DateTime<Utc>,
 }
 
 #[utoipa::path(
@@ -866,7 +1103,9 @@ pub(crate) async fn order_list_request(
 )]
 pub(crate) async fn order_create(
     Extension(database): Extension<Database>,
+    State(state): State<SharedState>,
     Extension(_random): Extension<Random>,
+    Extension(gsheets): Extension<SharedDcareGoogleSheet>,
     Extension(mut current_user): Extension<AuthState>,
     Json(order): Json<OrderNew>,
 ) -> Json<OrderApiResponse> {
@@ -1005,62 +1244,51 @@ pub(crate) async fn order_create(
         None
     };
 
-    let life_cycle = order.life_cycle
-        .as_ref()
-        .map_or("進行中", |l| l);
+    let life_cycle = order.life_cycle.as_ref().map_or("進行中", |l| l);
+    let warranty_expired = order.warranty_expired
+        .unwrap_or(false);
+    let confirmed_paid = order.confirmed_paid
+        .unwrap_or(0);
 
     let sn = OrderSN::generate(&database, &order.department).await;
+    let issue_at = Utc::now();
 
     const INSERT_QUERY: &str = r#"
-        WITH order_created AS (
-            INSERT INTO orders (
-                department_id,
-                contact_id,
-                customer_name,
-                customer_phone,
-                customer_address,
-                model_id,
-                purchase_at,
-                accessory_id1,
-                accessory_id2,
-                accessory_other,
-                appearance,
-                appearance_other,
-                service,
-                fault_id1,
-                fault_id2,
-                fault_other,
-                photo_url,
-                remark,
-                cost,
-                prepaid_free,
-                status_id,
-                life_cycle,
-                servicer_id,
-                maintainer_id,
-                sn
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8,
-                $9, $10, $11, $12, $13, $14, $15, $16,
-                $17, $18, $19, $20, $21, $22, $23, $24,
-                $25
-            ) RETURNING id
-        )
-        INSERT INTO order_histories (
-            order_id,
-            issuer_id,
+        INSERT INTO orders (
+            department_id,
+            contact_id,
+            customer_name,
+            customer_phone,
+            customer_address,
+            model_id,
+            purchase_at,
+            accessory_id1,
+            accessory_id2,
+            accessory_other,
+            appearance,
+            appearance_other,
+            service,
+            fault_id1,
+            fault_id2,
+            fault_other,
+            photo_url,
+            remark,
+            cost,
+            prepaid_free,
             status_id,
             life_cycle,
-            remark,
-            cost
+            servicer_id,
+            maintainer_id,
+            sn,
+            issue_at,
+            confirmed_paid,
+            warranty_expired
         ) VALUES (
-            (SELECT id FROM order_created),
-            $26,
-            $21,
-            $22,
-            $18,
-            $19
-        ) RETURNING id;
+            $1, $2, $3, $4, $5, $6, $7, $8,
+            $9, $10, $11, $12, $13, $14, $15, $16,
+            $17, $18, $19, $20, $21, $22, $23, $24,
+            $25, $26, $27, $28
+        ) RETURNING id
     "#;
     let fetch_one: Result<(i32,), _> = sqlx::query_as(INSERT_QUERY)
         .bind(department_id)
@@ -1088,7 +1316,64 @@ pub(crate) async fn order_create(
         .bind(servicer_id)
         .bind(maintainer_id)
         .bind(&sn.0)
+        .bind(issue_at)
+        .bind(confirmed_paid)
+        .bind(warranty_expired)
+        .fetch_one(&database)
+        .await;
+
+    debug!("fetch_one as {:?}", fetch_one);
+
+    let order_id = match fetch_one {
+        Ok((id,)) => id,
+        Err(e) => {
+            resp.update(500, Some(format!("{e}")), None, None);
+            error!("{:?}", &resp);
+            return Json(resp);
+        }
+    };
+
+    let gsheet_pos =
+        gsheets_order_append(gsheets.clone(), state.clone(), &order, issue_at, &sn.0).await;
+    debug!("gsheet_pos = {:?}", gsheet_pos);
+
+    const INSERT_QUERY2: &str = r#"
+        WITH history_created AS (
+            INSERT INTO order_histories (
+                order_id,
+                issuer_id,
+                status_id,
+                life_cycle,
+                remark,
+                cost
+            ) VALUES (
+                $1,
+                $2,
+                $3,
+                $4,
+                $5,
+                $6
+            ) RETURNING id
+        )
+        INSERT INTO order_gsheets (
+            order_id,
+            sheet_column,
+            sheet_row
+        ) VALUES (
+            $1,
+            $7,
+            $8
+        ) RETURNING id;
+    "#;
+    let fetch_one: Result<(i32,), _> = sqlx::query_as(INSERT_QUERY2)
+        .bind(order_id)
         .bind(issuer.id)
+        .bind(status_id)
+        .bind(life_cycle)
+        .bind(&order.remark)
+        .bind(order.cost)
+        .bind(&gsheet_pos.column)
+        .bind(gsheet_pos.row)
         .fetch_one(&database)
         .await;
 
@@ -1276,6 +1561,8 @@ async fn query_order(database: &Database, sn: &str) -> Option<OrderInfo> {
             o.remark,
             o.cost,
             o.prepaid_free,
+            o.confirmed_paid,
+            o.warranty_expired,
             s.flow status,
             o.life_cycle AS life_cycle,
             u2.username AS servicer,
@@ -1332,9 +1619,8 @@ impl OrderSN {
             FROM orders
             ORDER BY id DESC LIMIT 1;
         "#;
-        let res: Result<Option<OrderI32Res>, _> = sqlx::query_as(QUERY)
-            .fetch_optional(database)
-            .await;
+        let res: Result<Option<OrderI32Res>, _> =
+            sqlx::query_as(QUERY).fetch_optional(database).await;
         let next = match res {
             Ok(res) => res.map_or(1, |r| r.id + 1),
             Err(_) => 1,

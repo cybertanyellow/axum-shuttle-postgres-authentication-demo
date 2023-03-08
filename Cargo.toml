@@ -7,8 +7,8 @@ publish = false
 [lib]
 
 [dependencies]
-shuttle-service = { version = "0.10.0", features = ["web-axum"] }
-shuttle-shared-db = { version = "0.10.0", features = ["postgres"] }
+shuttle-service = { version = "0.11.0", features = ["web-axum"] }
+shuttle-shared-db = { version = "0.11.0", features = ["postgres"] }
 axum = "0.6.1"
 sync_wrapper = "0.1.1"
 http = "0.2.8"
@@ -29,3 +29,15 @@ tracing = "0.1.37"
 utoipa-swagger-ui = { version = "3.0.1", features = ["axum"] }
 utoipa = { version = "2.4.2", features = ["axum_extras", "serde_json", "json", "chrono"] }
 uuid = { version = "1.2.2", features = ["v4", "fast-rng", "macro-diagnostics"] }
+google-sheets4 = "4.0.1"
+hyper = "0.14.24"
+hyper-rustls = "0.23.2"
+thiserror = "1.0.38"
+regex = "1.7.1"
+lazy_static = "1.4.0"
+shuttle-secrets = "0.11.0"
+
+[dev-dependencies]
+# Enable test-utilities in dev mode only. This is mostly for tests.
+tokio = { version = "1", features = ["test-util"] }
+#tokio = { version = "1", features = ["full"] }
